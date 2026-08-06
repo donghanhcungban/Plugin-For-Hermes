@@ -5,7 +5,7 @@
 
 | PHẦN | Nội dung |
 |------|----------|
-| 1 — Nhóm 1 | env validation, migration, PR template, ADR, npm audit, Vercel staging, DoR |
+| 1 — Nhóm 1 | env validation, migration, PR template, ADR, npm audit, Vercel staging, DoR, sổ tay thuật ngữ (CONTEXT.md) |
 | 2 — Nhóm 2 | mobile-first, hiệu năng/Lighthouse, kiểm thử E2E+a11y+coverage, UI/UX, chống lỗi logic, observability, tối ưu mã nguồn |
 | 3 — Theme | Dark blue mặc định + Light, design tokens, no-flash |
 | 4 — Nâng cao | i18n · PWA · Sentry · SEO · Analytics |
@@ -28,6 +28,7 @@
 | CI thêm `npm audit` | "Audit bảo mật" chưa nằm trong pipeline | GĐ 6 |
 | Vercel Preview làm staging | "Có staging" tưởng tốn công, thực ra miễn phí | GĐ 6 |
 | Definition of Ready | Bổ trợ cho Definition of Done | GĐ 1 & 4 |
+| Sổ tay thuật ngữ (`CONTEXT.md`) | Người dùng & AI trôi dạt từ vựng → đặt tên/hội thoại không nhất quán | Xuyên suốt, nhất là GĐ 0–1 |
 
 ---
 
@@ -158,6 +159,37 @@ Khung đã có Definition of Done (khi nào một việc *xong*). Bổ sung đ�
 
 → DoR này đã nằm trong KHUNG 1 (Giai đoạn 1, ngay cạnh DoD) và runbook Phần B (Chất lượng). Trong `CLAUDE.md`, có thể yêu cầu AI kiểm tra DoR trước khi bắt đầu một task: nếu chưa đủ "ready", AI phải hỏi cho rõ trước, thay vì code ngay.
 
+---
+
+## 8. Sổ tay thuật ngữ nghiệp vụ (`CONTEXT.md`)
+
+Vấn đề: người dùng và AI dần trôi dạt sang từ vựng khác nhau cho cùng một khái niệm ("đơn hàng" vs "giao dịch" vs "order"), khiến code đặt tên không nhất quán và hội thoại vòng vo. `CONTEXT.md` là một **bảng thuật ngữ ngắn** — không phải spec, không phải sổ tay quyết định (đó là việc của ADR) — chỉ ghi *khái niệm nghiệp vụ này gọi là gì*.
+
+**Nguyên tắc:**
+- **Tạo lười.** Không tự sinh file rỗng lúc khởi tạo dự án; chỉ tạo `CONTEXT.md` ở gốc repo khi thuật ngữ đầu tiên cần chốt (thường trong lúc chạy `/grill` hoặc `/consult`).
+- **Có chủ kiến.** Nhiều từ cùng nghĩa → chọn một từ chuẩn, liệt kê các từ còn lại vào `_Tránh dùng_`.
+- **Ngắn gọn.** Mỗi thuật ngữ 1–2 câu, định nghĩa nó **LÀ GÌ**, không phải nó làm gì.
+- **Chỉ thuật ngữ đặc thù dự án.** Khái niệm lập trình chung (timeout, retry, cache...) không thuộc về đây dù dùng nhiều.
+- **Cập nhật ngay lúc chốt**, không dồn cuối phiên — nếu AI phát hiện người dùng dùng từ mâu thuẫn với `CONTEXT.md` đã có, phải **nêu ra ngay** trước khi tiếp tục (tương tự tinh thần "chủ động góp ý" ở mục 2).
+
+**Định dạng:**
+```md
+# CONTEXT.md
+
+## Ngôn ngữ nghiệp vụ
+
+**Đơn hàng**:
+Một yêu cầu mua hàng đã được khách xác nhận, gắn với đúng một khách hàng.
+_Tránh dùng_: giao dịch, order, phiếu mua
+
+**Khách hàng**:
+Cá nhân hoặc tổ chức đặt đơn hàng.
+_Tránh dùng_: người dùng, client, tài khoản
+```
+
+**Dự án nhiều module/bounded-context riêng biệt** (monorepo, nhiều domain rõ rệt): dùng `CONTEXT-MAP.md` ở gốc, trỏ tới một file `CONTEXT.md` đặt riêng trong thư mục từng module; dự án thường (một domain) chỉ cần một `CONTEXT.md` ở gốc.
+
+→ **Gắn vào khung:** `/grill` (xem `.claude/commands/grill.md`) cập nhật `CONTEXT.md` ngay khi một thuật ngữ chốt trong lúc phỏng vấn; `/consult` và mọi skill khác nên đọc `CONTEXT.md` (nếu có) trước khi đặt tên biến/hàm/tính năng để khớp ngôn ngữ đã chốt.
 
 ===============================================================================
 
@@ -359,6 +391,28 @@ TypeScript không cứu bạn ở đây — chỉ có suy nghĩ kỹ + test biê
 
 > **Quy tắc:** với mỗi nhánh logic phức tạp, viết *ít nhất một test cho ca biên* trước khi coi là xong.
 > Lỗi logic rẻ nhất khi bị một unit test bắt; đắt nhất khi người dùng thật gặp trên production.
+
+### Kỷ luật viết test (một test "có" không có nghĩa là test *tốt*)
+
+Viết test biên (mục trên) chỉ có giá trị nếu bản thân test đó đáng tin. Ba lỗi thường gặp khiến
+test **vô dụng dù vẫn xanh** — rà cả khi viết mới lẫn khi review PR:
+
+- **Test ăn khớp cách cài đặt (implementation-coupled):** mock thẳng hàm/module nội bộ, gọi
+  `private`, hoặc verify bằng cách truy vấn thẳng DB thay vì qua interface công khai. Dấu hiệu:
+  refactor xong (hành vi không đổi) mà test vẫn đỏ. → chỉ test qua **interface công khai** mà
+  caller thật sự dùng.
+- **Test tự-đúng-vì-tính-lại-công-thức (tautological):** giá trị kỳ vọng được tính lại **bằng
+  đúng công thức trong code** (`expect(tinhTong(items)).toBe(items.reduce(...))`), nên test
+  không thể trượt kể cả khi logic sai. → giá trị kỳ vọng phải là **con số cụ thể, độc lập**
+  (`expect(tinhTong([{gia:10},{gia:5}])).toBe(15)`).
+- **Viết test hàng loạt trước, code hàng loạt sau (horizontal slicing):** khi tách rời viết test
+  và viết implementation thành hai đợt lớn, test dễ mô tả *hình dạng tưởng tượng* thay vì hành vi
+  thật, và không phản ánh những gì code thực sự học được. → làm theo **lát cắt dọc**: một test →
+  một implementation tối thiểu cho nó pass → lặp lại, mỗi vòng chỉ một hành vi.
+
+**Vòng đỏ-xanh (khi áp dụng TDD có chủ đích):** viết test thất bại trước → chỉ viết đủ code để
+test đó pass (không đoán trước tính năng chưa cần) → refactor an toàn (có lưới test) → lặp lại
+cho hành vi tiếp theo. Chỉ **1 seam, 1 test, 1 lần sửa tối thiểu** mỗi vòng.
 
 ---
 

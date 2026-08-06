@@ -210,6 +210,29 @@
       - Đã cân nhắc và HOÃN: đóng gói Claude Code plugin (cần ADR + người dùng chốt);
         kiểm chứng case-study bước 6–8 (cần tài khoản thật).
 
+- ✅ **Nghiên cứu `mattpocock/skills` (GitHub) + bổ sung 7 mục ưu tiên cao vào khung** (nhánh
+      `claude/project-enhancement-research-hosp8u`), sau khi người dùng duyệt danh sách đề xuất:
+      - `.claude/commands/grill.md` — skill mới **`/grill`**: kỹ thuật phỏng vấn dồn dập (cây quyết
+        định, hỏi theo đợt/"frontier", mỗi câu kèm đề xuất) — thực thi cụ thể cho CLAUDE.md §9/mục 2.
+      - `.claude/commands/debug.md` — skill mới **`/debug`**: vòng chẩn đoán bug khó 6 pha (dựng
+        feedback loop đỏ-được trước tiên → tái hiện+thu nhỏ → giả thuyết xếp hạng → đo đạc → sửa+test
+        hồi quy → dọn dẹp), khác `/incident` (production) và `/audit-full` (quét toàn diện).
+      - `docs/framework/quality-supplements.md`: thêm Nhóm 1 mục 8 (sổ tay thuật ngữ `CONTEXT.md`,
+        tạo lười khi thuật ngữ đầu tiên chốt) + subsection "Kỷ luật viết test" trong Nhóm 2 mục 6
+        (3 anti-pattern: test ăn khớp cài đặt, test tự-đúng-vì-tính-lại-công-thức, viết test hàng loạt).
+      - `CLAUDE.md` §8: thêm kỷ luật giải xung đột merge/rebase (theo ý định, không bao giờ `--abort`).
+      - `.claude/settings.json` + `settings-shared-opusplan.json`: bổ sung 2 pattern deny còn thiếu
+        (`git checkout .`, `git restore .`) cạnh các pattern đã có (`push --force`/`reset --hard`/`clean`).
+      - `.husky/pre-commit`: đổi từ hardcode `npm run type-check` sang gọi `scripts/dev-task.sh gate`
+        (đã stack-agnostic, có build+typecheck+lint+test) — cổng con người commit tay giờ đủ mạnh
+        như cổng Claude Code chạy qua hook.
+      - Đã cân nhắc và HOÃN (nhóm giá trị vừa, người dùng chọn để sau): vocabulary "deep module"
+        (codebase-design), `/prototype`, `/wizard`, phase-boundary decision tree, `writing-for-agents`.
+      - Đã NGHIÊN CỨU nhưng KHÔNG áp dụng: `rohitg00/agentmemory` (server bộ nhớ xuyên phiên chạy
+        nền, phụ thuộc engine bên thứ ba "iii") — lệch triết lý minh bạch-qua-git của khung; ghi nhận
+        làm lựa chọn ngoài khung, không tích hợp mặc định.
+      - `bash scripts/check-docs-consistency.sh` sạch sau khi sửa 1 tham chiếu path giả trong ví dụ.
+
 ## Đang làm
 - (không có — mọi PR đang mở đã được rà và merge hết vào `main`)
 
