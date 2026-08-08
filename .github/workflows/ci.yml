@@ -6,6 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+# Quyền tối thiểu (least privilege): CI chỉ đọc mã nguồn, không ghi gì lên repo.
+# Khai ở cấp workflow để không phụ thuộc mặc định của repo/tổ chức (có thể là write).
+permissions:
+  contents: read
+
+# Push liên tiếp vào cùng một PR → hủy lượt chạy cũ, chỉ giữ lượt mới nhất.
+# Trên `main` thì KHÔNG hủy (mỗi commit đã merge cần một kết quả CI của riêng nó).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Hàng rào cho CHÍNH bộ khung — chạy CẢ KHI CHƯA có app (không guard package.json).
   # KHUNG-1 nguyên tắc 6: tiêu chuẩn kiểm được bằng máy thì tự động hóa — áp cho chính template:

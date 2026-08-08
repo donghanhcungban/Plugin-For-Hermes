@@ -73,7 +73,35 @@ for name in "${OLD_NAMES[@]}"; do
   done
 done
 
+echo "== 3. Lệnh (.claude/commands) ↔ CLAUDE.md khớp hai chiều =="
+# CLAUDE.md bị ép ngắn (< 200 dòng) trong khi số lệnh cứ tăng → rất dễ lệch:
+# thêm lệnh mà quên khai TRIGGER, hoặc xóa/đổi tên lệnh mà CLAUDE.md vẫn trỏ tới.
+# Kiểm cả hai chiều để máy bắt thay vì rà tay.
+
+# Chiều A: mỗi file lệnh phải được CLAUDE.md nhắc tới (qua đường dẫn hoặc `/tên`).
+for cmd in .claude/commands/*.md; do
+  [ -e "$cmd" ] || continue
+  name="$(basename "$cmd" .md)"
+  if ! grep -qF -e "\`$cmd\`" -e "\`/$name\`" CLAUDE.md; then
+    echo "::error::Lệnh $cmd chưa được CLAUDE.md khai (thiếu \`$cmd\` hoặc \`/$name\`)"
+    fail=1
+  fi
+done
+
+# Chiều B: mỗi `/tên` CLAUDE.md nhắc tới phải có file lệnh thật.
+# Miễn trừ: skill dựng sẵn của Claude Code, không nằm trong .claude/commands/ của repo.
+BUILTIN_COMMANDS=("code-review" "security-review" "simplify" "loop")
+mapfile -t slashRefs < <(
+  grep -hoE '`/[a-z][a-z0-9-]*`' CLAUDE.md | tr -d '`/' | sort -u
+)
+for name in "${slashRefs[@]}"; do
+  is_in "$name" "${BUILTIN_COMMANDS[@]}" && continue
+  [ -f ".claude/commands/$name.md" ] && continue
+  echo "::error::CLAUDE.md nhắc \`/$name\` nhưng không có .claude/commands/$name.md"
+  fail=1
+done
+
 if [ "$fail" -eq 0 ]; then
-  echo "OK — không phát hiện link gãy hay tên cũ sót lại."
+  echo "OK — không phát hiện link gãy, tên cũ sót lại, hay lệnh lệch với CLAUDE.md."
 fi
 exit "$fail"

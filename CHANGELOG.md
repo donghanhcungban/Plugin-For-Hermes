@@ -12,6 +12,11 @@ và dự án tuân theo [Semantic Versioning](https://semver.org/lang/vi/).
 
 ### Added (Thêm)
 
+- **Cổng nhất quán lệnh:** `scripts/check-docs-consistency.sh` kiểm hai chiều giữa
+  `.claude/commands/*.md` và `CLAUDE.md` — lệnh mới mà quên khai TRIGGER, hoặc `CLAUDE.md`
+  trỏ tới lệnh không tồn tại, đều bị CI chặn thay vì phải rà tay.
+- **Dependabot theo dõi `github-actions`** — các action trong `.github/workflows/` đang dùng
+  tag trôi (`@v4`, `@v3`); đây là phụ thuộc thật của chính bộ khung, trước đây không ai canh.
 - **Dấu bản khung ở dự án đích:** `copy-framework.sh`/`.ps1` sinh `docs/framework/FRAMEWORK-VERSION`
   (commit nguồn + ngày copy, luôn ghi đè theo lần copy gần nhất) — dự án đích biết mình đang dùng
   khung bản nào và so CHANGELOG này để quyết định khi nào copy lại.
@@ -21,7 +26,10 @@ và dự án tuân theo [Semantic Versioning](https://semver.org/lang/vi/).
 
 ### Changed (Đổi)
 
--
+- **Workflow siết quyền tối thiểu:** mọi workflow khai `permissions:` ở cấp workflow
+  (`ci.yml`, `lighthouse-ci.yml`, `codeql.yml` trước đây nhận quyền mặc định của repo).
+- **`concurrency` cho workflow:** push liên tiếp vào cùng một PR hủy lượt chạy cũ;
+  trên `main` không hủy, và `release.yml` xếp hàng (không hủy) để tránh release dở dang.
 
 ### Fixed (Sửa)
 

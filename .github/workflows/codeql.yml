@@ -11,6 +11,14 @@ on:
     # Quét định kỳ để bắt lỗ hổng mới phát hiện trong code đã merge.
     - cron: '0 3 * * 1'
 
+# Mặc định chỉ đọc; job `analyze` tự nâng quyền `security-events: write` cho riêng nó.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Repo khung (chưa có package.json) → bỏ qua để CI xanh; tự bật khi có dự án thật.
   # LƯU Ý cho dự án thật: phải BẬT "Code scanning" trong Settings → Code security & analysis,
