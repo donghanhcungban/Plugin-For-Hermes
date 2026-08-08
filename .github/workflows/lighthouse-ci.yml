@@ -7,6 +7,14 @@ on:
   pull_request:
     branches: [main]
 
+# Quyền tối thiểu: chỉ đọc mã nguồn để build và đo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lighthouse:
     runs-on: ubuntu-latest

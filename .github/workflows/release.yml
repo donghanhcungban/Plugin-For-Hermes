@@ -11,6 +11,12 @@ permissions:
   contents: write
   pull-requests: write
 
+# Xếp hàng, KHÔNG hủy: release-please ghi tag/CHANGELOG — hủy giữa chừng có thể
+# để lại trạng thái dở dang. Nhiều commit dồn vào `main` thì chạy lần lượt.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   # Repo khung (chưa có package.json) → bỏ qua để không lỗi; tự bật khi có dự án thật.
   check:
