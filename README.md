@@ -49,7 +49,9 @@ phải tuân thủ gì. Đó là kim chỉ nam chính.
 - `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/` (gồm mẫu **sự cố**),
   `.github/dependabot.yml`, `.github/CODEOWNERS`, và các workflow:
   `ci.yml` (lint/type/format/test+coverage/build/audit + **E2E** + chặn `[ĐIỀN]`),
-  `lighthouse-ci.yml`, `codeql.yml` (SAST), `secret-scan.yml` (gitleaks), `release.yml` (release-please).
+  `lighthouse-ci.yml`, `codeql.yml` (SAST), `secret-scan.yml` (gitleaks), `release.yml` (release-please),
+  `verify-dropins.yml` (chỉ dùng ở **repo khung** — dựng dự án Next.js sạch rồi lint/build thật
+  các file dropins; xóa được ở dự án đích).
 - `supabase/migrations/` — **migration MẪU** (bảng + ràng buộc + index + **RLS + policy**); `supabase/README.md`.
 - `LICENSE` (MIT — đổi chủ sở hữu/giấy phép theo dự án), `SECURITY.md`, `CONTRIBUTING.md`.
 - `docs/framework/` — tài liệu khung: **01/02/03** (quy trình · luật AI · chọn công nghệ research-first);

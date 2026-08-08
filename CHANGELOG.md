@@ -12,6 +12,11 @@ và dự án tuân theo [Semantic Versioning](https://semver.org/lang/vi/).
 
 ### Added (Thêm)
 
+- **`scripts/verify-dropins.sh` + workflow `verify-dropins.yml`** — dựng một dự án Next.js sạch,
+  copy khung vào, làm đúng Phần D của runbook rồi chạy lint/type-check/build/test THẬT.
+  Trước đây các file dropins (`app/`, `components/`, `lib/`, config) chưa từng được biên dịch
+  hay lint lần nào vì repo khung không có `package.json`. Chạy hằng đêm với
+  `create-next-app@latest` nên cũng là cảm biến version drift từ thượng nguồn.
 - **Cổng nhất quán lệnh:** `scripts/check-docs-consistency.sh` kiểm hai chiều giữa
   `.claude/commands/*.md` và `CLAUDE.md` — lệnh mới mà quên khai TRIGGER, hoặc `CLAUDE.md`
   trỏ tới lệnh không tồn tại, đều bị CI chặn thay vì phải rà tay.
@@ -33,7 +38,12 @@ và dự án tuân theo [Semantic Versioning](https://semver.org/lang/vi/).
 
 ### Fixed (Sửa)
 
--
+- **`components/theme-toggle.tsx` fail lint chính config của khung** (`react-hooks/set-state-in-effect`
+  của React Compiler, qua `eslint-config-next` bản mới). Viết lại theo `useSyncExternalStore` —
+  đọc `data-theme` trên `<html>` (nguồn sự thật do script no-flash đặt) thay vì `useState` +
+  `useEffect`; bỏ luôn một lượt render thừa sau hydrate.
+- **`app/sw.ts` không type-check được** (`TS2552: Cannot find name 'ServiceWorkerGlobalScope'`)
+  vì `lib` của Next chỉ có DOM. Thêm `/// <reference lib="webworker" />` theo từng-file.
 
 ### Removed (Bỏ)
 
