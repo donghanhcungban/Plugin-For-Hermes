@@ -370,6 +370,12 @@ export default eslintConfig;
 
 ## Bước 5 — TypeScript strict tối đa
 
+> **Nếu dùng PWA (`app/sw.ts`):** file service worker cần `/// <reference lib="webworker" />`
+> ở dòng đầu (đã có sẵn trong dropins). Không có nó, `tsc --noEmit` báo `TS2552: Cannot find
+> name 'ServiceWorkerGlobalScope'` vì `lib` của Next chỉ có DOM. Khai theo từng-file thay vì
+> thêm `"webworker"` vào `lib` toàn cục để không trộn kiểu DOM/Worker cho phần còn lại.
+
+
 Trong `tsconfig.json`, đảm bảo `compilerOptions` có (Next đã bật `strict: true`, thêm các cờ sau):
 
 ```json

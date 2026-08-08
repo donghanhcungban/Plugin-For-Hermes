@@ -1,0 +1,57 @@
+name: Verify dropins
+
+# Chứng minh bộ dropins của hồ sơ Web app THẬT SỰ chạy được: dựng một dự án Next.js sạch,
+# copy khung vào, làm đúng Phần D của runbook, rồi lint/type-check/build/test thật.
+#
+# Vì sao cần: repo khung cố ý không có package.json, nên trước job này `app/*.tsx`,
+# `lib/env.ts`, `components/*.tsx`, `eslint.config.mjs`, `vitest.config.ts` chưa từng được
+# biên dịch hay lint lần nào — khung phát đi những file mà chính nó không chứng minh được.
+#
+# Đây cũng là cảm biến VERSION DRIFT: job dùng `create-next-app@latest` nên khi Next/ESLint/
+# Tailwind ra bản mới làm dropins gãy, lịch chạy hằng đêm đỏ TRƯỚC khi người dùng gặp lỗi.
+
+on:
+  # Chạy khi PR đụng vào chính những file được kiểm (đổi dropins → phải chứng minh lại).
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'e2e/**'
+      - 'i18n/**'
+      - 'styles/**'
+      - 'messages/**'
+      - '*.config.*'
+      - '.prettierrc'
+      - '.lintstagedrc.json'
+      - 'copy-framework.sh'
+      - 'scripts/verify-dropins.sh'
+      - '.github/workflows/verify-dropins.yml'
+  # Hằng đêm: bắt drift từ phía thượng nguồn (Next/ESLint/Tailwind mới) dù khung đứng yên.
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # Cài Next + toolchain rồi build; rộng tay hơn mặc định 6h là thừa, nhưng 30' đủ chặn
+    # trường hợp npm treo mà không đốt runner.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Dựng dự án thật từ dropins rồi chạy cổng
+        run: bash scripts/verify-dropins.sh "$RUNNER_TEMP/verify-dropins"

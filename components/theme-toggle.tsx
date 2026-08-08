@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 /**
  * Nút chuyển theme (Dark blue mặc định ↔ Light).
@@ -9,23 +9,46 @@ import { useEffect, useState } from 'react';
  *
  * Nguyên tắc: dùng token (bg-background/text-foreground...), không hard-code màu;
  * lựa chọn được nhớ trong localStorage; có aria-label cho accessibility.
+ *
+ * NGUỒN SỰ THẬT là thuộc tính `data-theme` trên <html> (do script no-flash đặt TRƯỚC khi
+ * React hydrate), không phải state của React. Vì vậy dùng `useSyncExternalStore` thay vì
+ * `useState` + `useEffect`: đọc-state-trong-effect vừa bị React Compiler lint chặn
+ * (`react-hooks/set-state-in-effect`), vừa gây một lượt render thừa sau hydrate.
+ * `useSyncExternalStore` là cách React chính thức để đọc trạng thái ngoài React mà vẫn
+ * khớp SSR (server dùng `getServerSnapshot`, client đồng bộ lại ngay sau hydrate).
  */
 type Theme = 'light' | 'dark';
 
+const THEME_EVENT = 'themechange';
+
+function subscribe(onChange: () => void) {
+  // `storage`: theme đổi ở tab khác. `THEME_EVENT`: đổi ở chính tab này (toggle bên dưới).
+  window.addEventListener('storage', onChange);
+  window.addEventListener(THEME_EVENT, onChange);
+  return () => {
+    window.removeEventListener('storage', onChange);
+    window.removeEventListener(THEME_EVENT, onChange);
+  };
+}
+
+function getSnapshot(): Theme {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+
+// Trên server không có DOM — mặc định Dark blue, đúng mặc định của khung.
+function getServerSnapshot(): Theme {
+  return 'dark';
+}
+
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>('dark'); // mặc định Dark blue
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'light' || saved === 'dark') setTheme(saved);
-  }, []);
-
-  function toggle() {
+  const toggle = useCallback(() => {
     const next: Theme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    document.documentElement.setAttribute('data-theme', next);
+    document.documentElement.dataset.theme = next;
     localStorage.setItem('theme', next);
-  }
+    window.dispatchEvent(new Event(THEME_EVENT));
+  }, [theme]);
 
   return (
     <button
