@@ -19,6 +19,11 @@ public/sw.js
 public/sw.js.map
 public/swe-worker-*.js
 
+# Unity Cache / Logs
+Library/
+Logs/
+UserSettings/
+
 # Linh tinh
 *.tsbuildinfo
 next-env.d.ts

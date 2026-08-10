@@ -1,57 +1,53 @@
-# PROJECT.md — [Tên dự án]
+# PROJECT.md — Ambient AI Assistant (Smart Meeting & Thought Companion)
 
-> Đặc tả dự án — nguồn sự thật về *cái gì cần xây*. Điền đầy đủ trước khi code.
-> Mẫu lấy từ docs/framework/KHUNG-2 (Phần B). Nhờ AI phản biện trước khi chốt.
-> **Mẫu này mặc định theo hồ sơ Web app.** Các mục đặc thù web (Lighthouse/CWV, RLS, theme, endpoint) **chỉ điền nếu
-> đúng hồ sơ**; hồ sơ khác thay bằng tiêu chí tương đương (xem KHUNG-3 PHẦN C).
+> Đặc tả dự án Ambient AI Assistant — Trợ lý AI Cuộc họp & Ghi chú Trí nhớ Thông minh.
+> Nguồn sự thật về *cái gì cần xây*.
 
 ## 0. Loại dự án & Hồ sơ
-- Loại dự án (web / mobile / desktop / backend-API / site tĩnh / CLI-thư viện / data-ML / game / blockchain / monorepo / khác):
-- Hồ sơ áp dụng (KHUNG-3 C1–C10): ___ — nếu nhiều thành phần, liệt kê hồ sơ cho từng phần.
-- Cổng chất lượng đặc thù của hồ sơ (thay/bổ sung cho cổng web):
+- Loại dự án: Web App (Mobile-First Progressive Web App)
+- Hồ sơ áp dụng: C1 (Web App / Next.js Fullstack)
+- Cổng chất lượng: TypeScript strict, ESLint 0 warning, Next build xanh, Responsive mobile-first.
 
 ## 1. Vấn đề & Người dùng
-- Vấn đề (1–2 câu):
-- Người dùng mục tiêu (cụ thể):
-- Bằng chứng nhu cầu:
-- Đối thủ & điểm khác biệt:
+- **Vấn đề:** Người dùng bận rộn mất nhiều thời gian ghi chép cuộc họp, dễ quên các cam kết công việc (Task) và lịch hẹn (Calendar Events) phát sinh từ các cuộc trò chuyện hàng ngày.
+- **Người dùng mục tiêu:** Quản lý, Freelancer, Kỹ sư, Người làm việc tri thức bận rộn.
+- **Điểm khác biệt:** AI nghe - tự động trích xuất thông tin cấu trúc (Task, Event, Summary, Key Insights) + Lưu trữ trí nhớ dài hạn (Memory RAG) để hỏi đáp lại quá khứ.
 
 ## 2. Phạm vi MVP (MoSCoW)
-- Must have: (mỗi mục kèm tiêu chí chấp nhận)
-- Should have:
-- Could have:
-- Won't have (lúc này):
+- **Must have:**
+  - Thu âm trực tiếp từ trình duyệt (Microphone Audio Capture & Visualizer).
+  - Chuyển thoại thành văn bản (STT) + Phân tích AI qua Gemini LLM.
+  - Trích xuất tự động: Tóm tắt điểm chính (Summary), Danh sách Việc cần làm (Action Items / Tasks), Lịch hẹn (Calendar Events) và Thực thể trí nhớ (Entities).
+  - Quản lý nhật ký trí nhớ (Memory Logs / Timeline) lưu trữ tại máy (IndexedDB / Local Storage).
+  - Khung Chatbot Hỏi đáp Ký ức (Memory Q&A Assistant).
+  - Tạo & xuất file lịch chuẩn `.ics` / Google Calendar Link.
+- **Should have:**
+  - Tải file audio có sẵn (MP3, WAV, M4A, WebM) để AI phân tích.
+  - Xuất báo cáo tóm tắt dạng Markdown / PDF.
+- **Could have:**
+  - Đánh dấu người nói (Speaker Identification).
+  - Tích hợp trực tiếp Google Calendar API OAuth.
+- **Won't have (lúc này):**
+  - Ghi âm chạy ngầm 24/7 (vướng rào cản OS & Pin mobile).
 
 ## 3. Yêu cầu phi chức năng
-- Tốc độ mục tiêu (Lighthouse ≥ ...; CWV: LCP ≤ 2.5s, INP ≤ 200ms, CLS ≤ 0.1):
-- Bảo mật (vd RLS, xác thực):
-- Accessibility (vd WCAG AA):
-- Mobile-first & thiết bị/trình duyệt hỗ trợ:
-- Theme: nền **Dark blue mặc định** + chế độ **Light** (mặc định trừ khi nêu khác):
+- Tốc độ mục tiêu: Thời gian xử lý phân tích AI < 5 giây cho mỗi đoạn audio ngắn.
+- Bảo mật: Local-first storage cho dữ liệu ghi âm & transcript cá nhân.
+- Mobile-first & Responsive trên mọi màn hình (iOS Safari, Android Chrome, Desktop).
+- Theme: **Cyber Dark Blue mặc định** + hỗ trợ chế độ Light mode mượt mà.
 
-## 4. Tech stack
-> Điền theo KHUNG 3 (research-first). Mỗi lựa chọn ghi **phiên bản + ngày đã xác minh** và 1 câu lý do
-> (cân bằng độ phổ biến ↔ năng lực). Quyết định lớn → có ADR trong `docs/adr/`.
-- Frontend / Backend / CSDL / Hosting / Khác:
-- Phiên bản chính (đã xác minh ngày ____): Node ___ · framework ___ · CSDL/client ___ · ...
+## 4. Tech Stack
+- **Framework:** Next.js 15.1.4 (App Router), React 19, TypeScript 5.7.
+- **Styling:** Tailwind CSS 3.4, Lucide React Icons.
+- **AI Core:** `@google/generative-ai` (Gemini 2.0 Flash / Gemini 1.5 Pro).
+- **Audio:** Web MediaRecorder API, Web Speech API (fallback STT preview).
+- **Storage:** LocalStorage / IndexedDB + Next.js Server API Routes.
 
-## 5. Thiết kế dữ liệu
-- Bảng + cột + ràng buộc + quan hệ + index:
-- Chính sách RLS:
+## 5. Kiến trúc API & Luồng Dữ liệu
+- `/api/audio/process`: POST -> Nhận audio/text transcript -> Gemini Structuring Agent -> Trả về JSON (Summary, Tasks, Events, Key Insights).
+- `/api/memory/query`: POST -> Nhận câu hỏi -> Tra cứu trong Memory -> Gemini RAG Agent -> Trả về câu trả lời + Trích dẫn.
 
-## 6. Kiến trúc & API
-- Sơ đồ luồng (client ↔ server ↔ CSDL):
-- Danh sách endpoint (đầu vào / đầu ra / mã lỗi):
-- Logic nào ở server (nhạy cảm):
-
-## 7. Luồng người dùng chính
-- (từng bước từ vào app đến đạt mục tiêu)
-
-## 8. Definition of Done (DoD)
-- (sao chép từ KHUNG-1, điều chỉnh nếu cần)
-
-## 9. Lộ trình & Mốc thời gian
-- (chia theo đợt/sprint, mỗi đợt một mục tiêu rõ)
-
-## 10. Rủi ro & Giả định
-- (sổ rủi ro: giả định nguy hiểm nhất + cách kiểm chứng)
+## 6. Definition of Done (DoD)
+- Build xanh (`npm run build`), Type check 0 lỗi (`npm run type-check`), Lint 0 warning (`npm run lint`).
+- Thu âm và phân tích chính xác các thông tin Task & Event mẫu.
+- Xuất lịch hẹn tương thích tốt với Google Calendar / Apple Calendar.
