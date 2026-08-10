@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
-import { CheckSquare, Square, User, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
+import React, { useState } from "react";
+import { CheckSquare, Square, User, Clock, AlertTriangle, CheckCircle2, Bell, BellRing } from "lucide-react";
 import { TaskItem, MemoryStore } from "@/lib/memory-store";
+import { NotificationManager } from "@/lib/notification-manager";
 
 interface ActionItemsListProps {
   tasks: TaskItem[];
@@ -10,10 +11,24 @@ interface ActionItemsListProps {
 }
 
 export function ActionItemsList({ tasks, onTaskToggle }: ActionItemsListProps) {
+  const [notifiedTasks, setNotifiedTasks] = useState<Record<string, boolean>>({});
+
   const handleToggle = (id: string) => {
     const updated = MemoryStore.toggleTask(id);
     if (onTaskToggle) {
       onTaskToggle(updated);
+    }
+  };
+
+  const handleSetReminder = async (task: TaskItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const granted = await NotificationManager.requestPermission();
+    if (granted) {
+      NotificationManager.scheduleTaskReminder(task.title, 1);
+      setNotifiedTasks((prev) => ({ ...prev, [task.id]: true }));
+      alert(`Đã bật nhắc nhở cho công việc "${task.title}". Bạn sẽ nhận được thông báo trong 1 phút!`);
+    } else {
+      alert("Bạn cần cấp quyền Thông báo (Notification) trên trình duyệt để nhận nhắc nhở.");
     }
   };
 
@@ -84,7 +99,20 @@ export function ActionItemsList({ tasks, onTaskToggle }: ActionItemsListProps) {
                 <span className={`text-xs font-semibold ${task.completed ? "text-slate-500" : "text-slate-200"}`}>
                   {task.title}
                 </span>
-                {getPriorityBadge(task.priority)}
+                <div className="flex items-center gap-2">
+                  {getPriorityBadge(task.priority)}
+                  <button
+                    onClick={(e) => handleSetReminder(task, e)}
+                    className={`p-1 rounded-md transition-all ${
+                      notifiedTasks[task.id]
+                        ? "text-cyan-400 bg-cyan-500/10"
+                        : "text-slate-500 hover:text-cyan-400 hover:bg-slate-800"
+                    }`}
+                    title="Bật thông báo nhắc nhở"
+                  >
+                    {notifiedTasks[task.id] ? <BellRing className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
