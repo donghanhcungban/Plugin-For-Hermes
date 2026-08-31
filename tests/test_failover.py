@@ -66,6 +66,63 @@ class FakeAuthManager:
 
 
 class MultiAccountFailoverTests(unittest.IsolatedAsyncioTestCase):
+    async def test_nonstream_model_fallback_tries_claude_before_rotating_account(
+        self,
+    ) -> None:
+        # gemini-3.7-flash hits a rate limit on account #1's Gemini quota;
+        # the SAME account still has Claude quota available. The in-account
+        # model fallback should try claude-sonnet-4-6 on the same account
+        # BEFORE rotating to a different Google account.
+        auth = FakeAuthManager()
+        seen: list[tuple[str, str]] = []  # (token, requested-model-in-body)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            token = request.headers["Authorization"].removeprefix("Bearer ")
+            body = json.loads(request.content)
+            model = body.get("model", "")
+            seen.append((token, model))
+            if token == "token-a" and model == "gemini-3-flash-agent":
+                return httpx.Response(
+                    429,
+                    headers={"Retry-After": "60"},
+                    json={"error": {"message": "RESOURCE_EXHAUSTED"}},
+                )
+            if token == "token-a" and model == "claude-sonnet-4-6":
+                return httpx.Response(
+                    200,
+                    json={
+                        "response": {
+                            "candidates": [
+                                {"content": {"parts": [{"text": "SAME_ACCOUNT_CLAUDE_OK"}]}}
+                            ]
+                        }
+                    },
+                )
+            raise AssertionError(f"unexpected request: token={token} model={model}")
+
+        client = AntigravityClient(auth)
+        await client._http.aclose()
+        client._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            result = await client.create_chat_completion(
+                {
+                    "model": "gemini-3.7-flash",
+                    "messages": [{"role": "user", "content": "hello"}],
+                }
+            )
+        finally:
+            await client.close()
+
+        self.assertEqual(
+            result["choices"][0]["message"]["content"], "SAME_ACCOUNT_CLAUDE_OK"
+        )
+        self.assertEqual(
+            seen, [("token-a", "gemini-3-flash-agent"), ("token-a", "claude-sonnet-4-6")]
+        )
+        # The account was NOT cooled down / rotated away from — it still had
+        # usable Claude quota, so mark_account_unavailable must not fire.
+        self.assertEqual(auth.marked, [])
+
     async def test_nonstream_429_rotates_to_next_account(self) -> None:
         auth = FakeAuthManager()
         seen_tokens: list[str] = []
@@ -106,7 +163,7 @@ class MultiAccountFailoverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result["choices"][0]["message"]["content"], "SECOND_ACCOUNT_OK"
         )
-        self.assertEqual(seen_tokens, ["token-a", "token-b"])
+        self.assertEqual(seen_tokens, ["token-a", "token-a", "token-b"])
         self.assertEqual(auth.marked, [("a@example.com", 429)])
 
     async def test_nonstream_401_rotates_to_next_account(self) -> None:
@@ -145,7 +202,7 @@ class MultiAccountFailoverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result["choices"][0]["message"]["content"], "AUTH_FAILOVER_OK"
         )
-        self.assertEqual(seen_tokens, ["token-a", "token-b"])
+        self.assertEqual(seen_tokens, ["token-a", "token-a", "token-b"])
         self.assertEqual(auth.marked, [("a@example.com", 401)])
 
     async def test_nonstream_primary_5xx_tries_fallback_with_same_account(self) -> None:
@@ -229,7 +286,7 @@ class MultiAccountFailoverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result["choices"][0]["message"]["content"], "QUOTA_FAILOVER_OK"
         )
-        self.assertEqual(seen_tokens, ["token-a", "token-b"])
+        self.assertEqual(seen_tokens, ["token-a", "token-a", "token-b"])
         self.assertEqual(auth.marked, [("a@example.com", 400)])
 
     async def test_stream_429_rotates_before_yielding(self) -> None:

@@ -18,11 +18,18 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 import httpx
 
-from tools.antigravity_bridge.auth import (
-    AntigravityAuthManager,
-    AntigravityCredentials,
-    DEFAULT_PROJECT_ID,
-)
+try:
+    from bridge.auth import (
+        AntigravityAuthManager,
+        AntigravityCredentials,
+        DEFAULT_PROJECT_ID,
+    )
+except ImportError:
+    from tools.antigravity_bridge.auth import (
+        AntigravityAuthManager,
+        AntigravityCredentials,
+        DEFAULT_PROJECT_ID,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +137,17 @@ VALID_CODE_ASSIST_MODELS = {
     "gemini-3.6-flash-medium",
     "gemini-3.1-pro-low",
     "claude-sonnet-4-6",
+}
+
+# In-account model fallback: when the requested model's quota is exhausted on
+# an account that still has OTHER model quota available, try that sibling
+# model on the SAME account before rotating to a different Google account.
+# Gemini and Claude are billed against independent quota buckets on
+# Antigravity, so this recovers a request without burning through the
+# account pool. Keyed by the Code-Assist-internal model id (post
+# map_model_name), one fallback hop per requested model.
+IN_ACCOUNT_MODEL_FALLBACK = {
+    "gemini-3-flash-agent": "claude-sonnet-4-6",
 }
 
 
@@ -714,6 +732,35 @@ class AntigravityClient:
 
             should_try_fallback = resp.status_code >= 500 or not _should_fail_over(resp)
             if not should_try_fallback:
+                # Same-account model fallback: try a sibling model with
+                # independent quota on THIS account before rotating away
+                # from it (e.g. gemini-3.7-flash exhausted -> try
+                # claude-sonnet-4-6, same Google account).
+                sibling_model = IN_ACCOUNT_MODEL_FALLBACK.get(envelope.get("model"))
+                if sibling_model:
+                    sibling_envelope = dict(envelope, model=sibling_model)
+                    sibling_resp = await self._http.post(
+                        url, json=sibling_envelope, headers=headers
+                    )
+                    last_response = sibling_resp
+                    if sibling_resp.status_code == 200:
+                        gemini_data = sibling_resp.json()
+                        requested_model = openai_payload.get("model") or "gemini-3.7-flash"
+                        return translate_gemini_to_openai_response(
+                            gemini_data, requested_model
+                        )
+                    if _should_fail_over(sibling_resp):
+                        self.auth_manager.mark_account_unavailable(
+                            creds,
+                            sibling_resp.status_code,
+                            sibling_resp.headers.get("Retry-After"),
+                        )
+                        continue
+                    raise RuntimeError(
+                        "Antigravity Code Assist failed with HTTP "
+                        f"{sibling_resp.status_code}: {sibling_resp.text}"
+                    )
+
                 self.auth_manager.mark_account_unavailable(
                     creds, resp.status_code, resp.headers.get("Retry-After")
                 )

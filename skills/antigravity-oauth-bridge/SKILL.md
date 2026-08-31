@@ -70,6 +70,64 @@ Hermes auto-wakes the bridge on first use via
 `ensure_antigravity_bridge_running()` in the plugin's `build_extra_body` hook, so
 `start` is mostly for manual testing.
 
+## Cross-provider auto-failover (zero-touch, on by default)
+
+`install.py` (and `manage.py setup`) don't stop at making Antigravity usable —
+they configure Hermes' own `fallback_providers` chain automatically, so
+**nothing manual is required** to survive a rate limit:
+
+```
+Primary:  antigravity (gemini-3.7-flash)  — N Google accounts rotate internally first
+Fallback 1: openai-codex (gpt-5-codex)
+Fallback 2: anthropic (claude-sonnet-4-6)
+```
+
+The full failure path, with zero user interaction at every layer:
+
+```
+antigravity account #1 hits 429/quota
+  → antigravity rotates internally to account #2, #3, ... (bridge/auth.py)
+  → all antigravity accounts exhausted
+    → Hermes' own fallback_providers chain kicks in: openai-codex
+      → openai-codex also fails/rate-limited
+        → anthropic
+```
+
+This is implemented by `manage.py`'s `apply_priority_fallback_config()` /
+`configure_priority_fallback()`, called automatically as step 5 of
+`install.py`. It edits `$HERMES_HOME/config.yaml`:
+
+- `model.provider: antigravity`, `model.default: gemini-3.7-flash` (primary)
+- `fallback_providers: [{provider: openai-codex, model: gpt-5-codex},
+  {provider: anthropic, model: claude-sonnet-4-6}]`
+- Never duplicates entries already present in `fallback_providers` — merges,
+  doesn't clobber, so re-running `install.py`/`setup` is idempotent and safe
+  alongside a user's own manually-added fallback entries.
+
+Opt out or adjust at install time:
+
+```bash
+python manage.py setup --no-fallback          # antigravity primary, no auto fallback chain
+python manage.py setup --as-fallback-only     # keep your current primary provider;
+                                                # only ADD antigravity + openai-codex +
+                                                # anthropic to the fallback chain
+```
+
+Or any time afterward with Hermes' own CLI:
+
+```bash
+hermes fallback list      # inspect the chain
+hermes fallback remove    # drop one entry
+hermes fallback clear     # remove all
+hermes fallback add       # add another provider interactively
+```
+
+This cross-provider layer complements, but is separate from, the
+multi-account rotation *within* `antigravity` documented below — Hermes'
+`fallback_providers` only activates once every antigravity account is
+cooling down (or on connection/5xx errors this bridge doesn't recover from
+internally).
+
 ## Multi-account failover (how it behaves)
 
 `bridge/auth.py`'s `AntigravityAuthManager` and `bridge/client.py`'s

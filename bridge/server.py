@@ -22,14 +22,24 @@ from typing import Any, Dict, Optional
 
 from aiohttp import web
 
-from tools.antigravity_bridge.auth import (
-    AntigravityAuthManager,
-    get_hermes_dir,
-)
-from tools.antigravity_bridge.client import (
-    ANTIGRAVITY_SUPPORTED_MODELS,
-    AntigravityClient,
-)
+try:
+    from bridge.auth import (
+        AntigravityAuthManager,
+        get_hermes_dir,
+    )
+    from bridge.client import (
+        ANTIGRAVITY_SUPPORTED_MODELS,
+        AntigravityClient,
+    )
+except ImportError:
+    from tools.antigravity_bridge.auth import (
+        AntigravityAuthManager,
+        get_hermes_dir,
+    )
+    from tools.antigravity_bridge.client import (
+        ANTIGRAVITY_SUPPORTED_MODELS,
+        AntigravityClient,
+    )
 
 logger = logging.getLogger(__name__)
 
