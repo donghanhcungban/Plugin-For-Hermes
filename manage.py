@@ -246,15 +246,29 @@ def cmd_install(args: argparse.Namespace) -> int:
             print(f"    Copied {item.name}")
 
     print(f"[*] Copying bridge module to {dest_bridge_dir}...")
-    dest_bridge_dir.parent.mkdir(parents=True, exist_ok=True)
-    if dest_bridge_dir.exists():
-        shutil.rmtree(dest_bridge_dir, ignore_errors=True)
-    shutil.copytree(src_bridge_dir, dest_bridge_dir)
-    print("    Copied bridge runtime engine.")
+    if src_bridge_dir.is_dir():
+        dest_bridge_dir.parent.mkdir(parents=True, exist_ok=True)
+        if dest_bridge_dir.exists():
+            shutil.rmtree(dest_bridge_dir, ignore_errors=True)
+        shutil.copytree(src_bridge_dir, dest_bridge_dir)
+        print("    Copied bridge runtime engine.")
+    elif dest_bridge_dir.is_dir():
+        # This manager is already running from the installed layout. The
+        # installed runtime is its only source, so never remove it while
+        # trying to perform an upgrade/setup operation.
+        print("    Running from installed layout; retained existing bridge runtime engine.")
+    else:
+        print("[-] Bridge runtime source is unavailable; installation was not changed.")
+        return 1
 
-    # Also copy the manager script to ~/.hermes/bridge/antigravity/
-    shutil.copy2(Path(__file__), hermes_dir / "bridge" / "antigravity" / "manage.py")
-    print(f"    Copied management script to {hermes_dir / 'bridge' / 'antigravity' / 'manage.py'}")
+    # Also copy the manager script to ~/.hermes/bridge/antigravity/ unless it
+    # is already the installed script (copying a file onto itself raises).
+    manager_dest = hermes_dir / "bridge" / "antigravity" / "manage.py"
+    if Path(__file__).resolve() != manager_dest.resolve():
+        shutil.copy2(Path(__file__), manager_dest)
+        print(f"    Copied management script to {manager_dest}")
+    else:
+        print("    Running installed management script; no copy needed.")
 
     _ensure_core_registrations()
     print("[+] Plugin & Bridge installed! It is now permanently persistent across Hermes upgrades.")
@@ -308,6 +322,18 @@ def apply_priority_fallback_config(
 
     existing = config_data.get("fallback_providers")
     chain = list(existing) if isinstance(existing, list) else []
+    # A provider must never appear both as the primary and as a fallback.
+    # That duplicate creates a pointless retry loop when setup/install is run
+    # again after Antigravity has already been selected as primary.
+    if set_primary:
+        chain = [
+            entry
+            for entry in chain
+            if not (
+                isinstance(entry, dict)
+                and str(entry.get("provider") or "").strip().lower() == "antigravity"
+            )
+        ]
     # Upsert by provider only (not (provider, model)): a future default-model
     # bump, or the user's own manual model choice for an already-present
     # provider, must UPDATE that single entry in place rather than appending
@@ -356,10 +382,10 @@ def configure_priority_fallback_preserving_existing_primary(
         with open(config_file, "r", encoding="utf-8") as f:
             existing_config = yaml.safe_load(f) or {}
 
-    has_existing_primary = bool(
-        isinstance(existing_config.get("model"), dict)
-        and existing_config["model"].get("provider")
-    )
+    existing_provider = ""
+    if isinstance(existing_config.get("model"), dict):
+        existing_provider = str(existing_config["model"].get("provider") or "").strip()
+    has_existing_primary = bool(existing_provider)
 
     return configure_priority_fallback(
         hermes_dir,
@@ -367,7 +393,7 @@ def configure_priority_fallback_preserving_existing_primary(
         port=port,
         openai_model=openai_model,
         anthropic_model=anthropic_model,
-        set_primary=not has_existing_primary,
+        set_primary=(not has_existing_primary or existing_provider.lower() == "antigravity"),
     )
 
 
@@ -470,10 +496,14 @@ def cmd_setup(args: argparse.Namespace) -> int:
                 set_primary=False,
             )
         else:
-            configure_priority_fallback_preserving_existing_primary(
+            # `setup` is an explicit request to make Antigravity active. The
+            # installer preserves an existing primary on upgrades; callers who
+            # want that behavior here must opt in with --as-fallback-only.
+            configure_priority_fallback(
                 hermes_dir,
                 antigravity_model=model_name,
                 port=port,
+                set_primary=True,
             )
         print("[+] Hermes configured with zero-touch failover chain:")
         if getattr(args, "as_fallback_only", False):
