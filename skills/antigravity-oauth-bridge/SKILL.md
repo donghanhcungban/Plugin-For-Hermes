@@ -116,3 +116,12 @@ curl http://127.0.0.1:8100/auth/status     # Trạng thái đăng nhập, email,
 - **is_expired**: Thuộc tính `AntigravityCredentials.is_expired` là một **property**, không phải method — gọi không kèm cặp ngoặc đơn `()`.
 - **Cấu hình ProviderProfile**: Để Hermes nhận diện provider qua CLI/Dashboard, `auth_type` bắt buộc phải là `"api_key"` với biến môi trường giả lập là `env_vars=("ANTIGRAVITY_API_KEY",)`, dù thực tế quá trình xác thực OAuth được xử lý hoàn toàn bên trong bridge cục bộ.
 - **Rủi ro sử dụng**: Đây là plugin bên thứ ba sử dụng API nội bộ `v1internal` của Google. Sử dụng với tần suất quá cao (24/7 qua gateway) có thể dẫn đến rủi ro bị hạn chế tài khoản từ phía Google.
+
+## 🌟 Cổng Chất Lượng Thượng Thừa (Supreme Quality Gate)
+
+Khi vận hành kỹ năng này, agent phải tuân thủ nghiêm ngặt các nguyên tắc sau:
+1. **Tuyệt đối không đoán mò**: Không bao giờ tự bịa ra dữ liệu, nội dung file hay kết quả kiểm thử. Mọi báo cáo phải dựa trên output thực tế từ công cụ.
+2. **Kiểm tra trước khi sửa**: Luôn sử dụng `read_file`/`search_files` để xác minh nội dung hiện tại và cấu trúc thư mục trước khi sửa đổi.
+3. **Sửa đổi targeted**: Ưu tiên dùng `patch` (thay vì ghi đè hoàn toàn bằng `write_file`) cho các chỉnh sửa cục bộ để giữ lại cấu hình nguyên bản và tránh lỗi cú pháp không mong muốn.
+4. **Xác minh đầu ra**: Sau khi chỉnh sửa code hoặc tệp cấu hình, bắt buộc phải chạy bộ test suite hoặc lệnh build/compile để kiểm tra tính đúng đắn.
+5. **Tối ưu hóa token**: Giới hạn phạm vi đọc tệp bằng cách sử dụng `offset` và `limit` để tiết kiệm token ngữ cảnh.
