@@ -191,6 +191,34 @@ class InstallPreservesExistingPrimaryTests(unittest.TestCase):
             )
 
 
+    def test_reinstall_with_antigravity_primary_does_not_add_it_as_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            hermes_dir = Path(tmp)
+            import yaml
+
+            config_file = hermes_dir / "config.yaml"
+            config_file.write_text(
+                yaml.dump(
+                    {
+                        "model": {"provider": "antigravity", "default": "gemini-3.7-flash"},
+                        "fallback_providers": [
+                            {"provider": "antigravity", "model": "gemini-3.7-flash"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manage.configure_priority_fallback_preserving_existing_primary(hermes_dir)
+
+            data = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+            self.assertEqual(data["model"]["provider"], "antigravity")
+            self.assertEqual(
+                [e["provider"] for e in data["fallback_providers"]],
+                ["openai-codex", "anthropic"],
+            )
+
+
 class ConfigurePriorityFallbackIntegrationTests(unittest.TestCase):
     def test_writes_yaml_config_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
