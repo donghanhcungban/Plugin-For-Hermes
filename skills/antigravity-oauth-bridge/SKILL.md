@@ -1,7 +1,7 @@
 ---
 name: antigravity-oauth-bridge
 description: "Plugin Antigravity OAuth: Tự động chuyển đổi/xoay tài khoản Gemini/Claude."
-version: 1.1.0
+version: 1.0.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
