@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
@@ -328,6 +329,65 @@ def _translate_tool_result_to_gemini(message: Dict[str, Any]) -> Dict[str, Any]:
     return {"functionResponse": function_response}
 
 
+def _sanitize_gemini_schema_node(node: Any) -> Any:
+    """Normalize one JSON-Schema fragment for the Code Assist tool validator.
+
+    Google's Code Assist endpoint requires each tool's ``input_schema`` to be
+    valid JSON Schema draft 2020-12 and, in practice, rejects several shapes
+    that Hermes' own tool registry (and MCP servers layered on top of it)
+    commonly emit:
+
+    * ``anyOf``/``oneOf`` nullable unions (``[{"type": "string"},
+      {"type": "null"}]``) used to mark an optional field — collapsed to the
+      non-null branch.
+    * Array-form ``"type": ["string", "null"]`` — collapsed to the non-null
+      type.
+    * A ``default`` keyword sitting alongside a ``$ref`` — illegal per strict
+      draft 2020-12 validators; dropped.
+    * A stray ``nullable: true`` OpenAPI-style extension — not part of JSON
+      Schema; dropped once the null branch above is gone.
+
+    Runs as a defensive pass over every tool Hermes forwards to the bridge,
+    not just ones known to trigger the failure, because a long conversation
+    can carry many tools and any one bad schema 400s the entire request.
+    """
+    if isinstance(node, list):
+        return [_sanitize_gemini_schema_node(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    out: Dict[str, Any] = {k: _sanitize_gemini_schema_node(v) for k, v in node.items()}
+
+    for key in ("anyOf", "oneOf"):
+        variants = out.get(key)
+        if not isinstance(variants, list):
+            continue
+        non_null = [v for v in variants if not (isinstance(v, dict) and v.get("type") == "null")]
+        if len(non_null) == 1 and len(non_null) != len(variants):
+            replacement = dict(non_null[0]) if isinstance(non_null[0], dict) else {}
+            for meta_key in ("title", "description", "default"):
+                if meta_key in out and meta_key not in replacement:
+                    if meta_key == "default" and "$ref" in replacement:
+                        continue
+                    replacement[meta_key] = out[meta_key]
+            out = {k: v for k, v in out.items() if k not in (key, "title", "description", "default")}
+            out.update(replacement)
+        elif not non_null and variants:
+            out.pop(key, None)
+            out.setdefault("type", "string")
+
+    type_val = out.get("type")
+    if isinstance(type_val, list):
+        non_null_types = [t for t in type_val if t != "null"]
+        out["type"] = non_null_types[0] if non_null_types else "string"
+
+    if "$ref" in out:
+        out.pop("default", None)
+
+    out.pop("nullable", None)
+    return out
+
+
 def _translate_tools_to_gemini(tools: Any) -> List[Dict[str, Any]]:
     if not isinstance(tools, list) or not tools:
         return []
@@ -346,7 +406,7 @@ def _translate_tools_to_gemini(tools: Any) -> List[Dict[str, Any]]:
             decl["description"] = str(fn["description"])
         params = fn.get("parameters")
         if isinstance(params, dict):
-            decl["parameters"] = params
+            decl["parameters"] = _sanitize_gemini_schema_node(params)
         declarations.append(decl)
     if not declarations:
         return []
