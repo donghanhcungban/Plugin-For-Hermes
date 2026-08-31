@@ -261,8 +261,157 @@ def cmd_install(args: argparse.Namespace) -> int:
     return 0
 
 
+DEFAULT_OPENAI_FALLBACK_MODEL = "gpt-5-codex"
+DEFAULT_ANTHROPIC_FALLBACK_MODEL = "claude-sonnet-4-6"
+
+
+def apply_priority_fallback_config(
+    config_data: dict,
+    *,
+    antigravity_model: str = "gemini-3.7-flash",
+    antigravity_base_url: str | None = None,
+    openai_model: str = DEFAULT_OPENAI_FALLBACK_MODEL,
+    anthropic_model: str = DEFAULT_ANTHROPIC_FALLBACK_MODEL,
+    set_primary: bool = True,
+) -> dict:
+    """Set the recommended zero-touch failover chain: antigravity -> openai-codex -> anthropic.
+
+    Mutates and returns ``config_data`` (a parsed ``config.yaml`` dict).
+    ``set_primary=False`` leaves ``model.provider``/``model.default`` untouched
+    (useful when the user already has a different primary provider configured)
+    while still appending the antigravity/openai-codex/anthropic fallback
+    entries so a rate limit on the current primary automatically rotates
+    through them.
+
+    Never duplicates a ``(provider, model)`` pair already present in
+    ``fallback_providers`` — existing unrelated entries are preserved.
+    """
+    port = DEFAULT_BRIDGE_PORT
+    base_url = antigravity_base_url or f"http://127.0.0.1:{port}/v1"
+
+    if set_primary:
+        if not isinstance(config_data.get("model"), dict):
+            config_data["model"] = {}
+        config_data["model"]["provider"] = "antigravity"
+        config_data["model"]["default"] = antigravity_model
+        config_data["model"]["base_url"] = base_url
+        priority_entries = [
+            {"provider": "openai-codex", "model": openai_model},
+            {"provider": "anthropic", "model": anthropic_model},
+        ]
+    else:
+        priority_entries = [
+            {"provider": "antigravity", "model": antigravity_model},
+            {"provider": "openai-codex", "model": openai_model},
+            {"provider": "anthropic", "model": anthropic_model},
+        ]
+
+    existing = config_data.get("fallback_providers")
+    chain = list(existing) if isinstance(existing, list) else []
+    # Upsert by provider only (not (provider, model)): a future default-model
+    # bump, or the user's own manual model choice for an already-present
+    # provider, must UPDATE that single entry in place rather than appending
+    # a second entry for the same provider. Whichever value the entry already
+    # holds — including one the user hand-edited via `hermes fallback add` —
+    # wins; we only add a NEW entry when the provider isn't present yet.
+    seen_providers = {
+        str(e.get("provider") or "").strip().lower()
+        for e in chain
+        if isinstance(e, dict)
+    }
+    for entry in priority_entries:
+        key = entry["provider"].lower()
+        if key in seen_providers:
+            continue
+        chain.append(entry)
+        seen_providers.add(key)
+
+    config_data["fallback_providers"] = chain
+    config_data.pop("fallback_model", None)
+    return config_data
+
+
+def configure_priority_fallback_preserving_existing_primary(
+    hermes_dir: Path,
+    *,
+    antigravity_model: str = "gemini-3.7-flash",
+    port: int | None = None,
+    openai_model: str = DEFAULT_OPENAI_FALLBACK_MODEL,
+    anthropic_model: str = DEFAULT_ANTHROPIC_FALLBACK_MODEL,
+) -> Path:
+    """Upgrade-safe wrapper for ``configure_priority_fallback``.
+
+    Sets antigravity as the primary provider ONLY when ``config.yaml`` has no
+    existing ``model.provider`` (a genuinely fresh install). If the user
+    already configured a different primary provider — e.g. a prior install,
+    or a manual ``hermes model`` choice — that primary is left untouched and
+    antigravity is appended to the fallback chain instead, so re-running
+    ``install.py`` on an upgrade never silently resets the primary provider.
+    """
+    import yaml
+
+    config_file = hermes_dir / "config.yaml"
+    existing_config: dict = {}
+    if config_file.exists():
+        with open(config_file, "r", encoding="utf-8") as f:
+            existing_config = yaml.safe_load(f) or {}
+
+    has_existing_primary = bool(
+        isinstance(existing_config.get("model"), dict)
+        and existing_config["model"].get("provider")
+    )
+
+    return configure_priority_fallback(
+        hermes_dir,
+        antigravity_model=antigravity_model,
+        port=port,
+        openai_model=openai_model,
+        anthropic_model=anthropic_model,
+        set_primary=not has_existing_primary,
+    )
+
+
+def configure_priority_fallback(
+    hermes_dir: Path,
+    *,
+    antigravity_model: str = "gemini-3.7-flash",
+    port: int | None = None,
+    openai_model: str = DEFAULT_OPENAI_FALLBACK_MODEL,
+    anthropic_model: str = DEFAULT_ANTHROPIC_FALLBACK_MODEL,
+    set_primary: bool = True,
+) -> Path:
+    """Load, update, and persist ``<hermes_dir>/config.yaml`` with the
+    zero-touch antigravity -> openai-codex -> anthropic failover chain.
+
+    Returns the path to the written config file.
+    """
+    import yaml
+
+    config_file = hermes_dir / "config.yaml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_data: dict = {}
+    if config_file.exists():
+        with open(config_file, "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f) or {}
+
+    base_url = f"http://127.0.0.1:{port or DEFAULT_BRIDGE_PORT}/v1"
+    apply_priority_fallback_config(
+        config_data,
+        antigravity_model=antigravity_model,
+        antigravity_base_url=base_url,
+        openai_model=openai_model,
+        anthropic_model=anthropic_model,
+        set_primary=set_primary,
+    )
+
+    with open(config_file, "w", encoding="utf-8") as f:
+        yaml.dump(config_data, f, default_flow_style=False)
+    return config_file
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
-    """Configure Hermes config.yaml and .env to use Antigravity."""
+    """Configure Hermes config.yaml and .env to use Antigravity, with
+    automatic zero-touch cross-provider failover by default."""
     hermes_dir = get_hermes_dir()
     config_file = hermes_dir / "config.yaml"
     env_file = hermes_dir / ".env"
@@ -282,34 +431,75 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
     model_name = args.model or "gemini-3.7-flash"
     port = args.port or DEFAULT_BRIDGE_PORT
-    base_url = f"http://127.0.0.1:{port}/v1"
 
-    print(f"[*] Configuring Hermes (~/.hermes/config.yaml)...")
+    if getattr(args, "no_fallback", False):
+        base_url = f"http://127.0.0.1:{port}/v1"
+        print(f"[*] Configuring Hermes (~/.hermes/config.yaml)...")
+        try:
+            import yaml
+            config_data = {}
+            if config_file.exists():
+                with open(config_file, "r", encoding="utf-8") as f:
+                    config_data = yaml.safe_load(f) or {}
+
+            if "model" not in config_data or not isinstance(config_data["model"], dict):
+                config_data["model"] = {}
+
+            config_data["model"]["default"] = model_name
+            config_data["model"]["provider"] = "antigravity"
+            config_data["model"]["base_url"] = base_url
+
+            with open(config_file, "w", encoding="utf-8") as f:
+                yaml.dump(config_data, f, default_flow_style=False)
+            print(f"[+] Hermes configured to use Antigravity:")
+            print(f"    model.provider: antigravity")
+            print(f"    model.default:  {model_name}")
+            print(f"    model.base_url: {base_url}")
+        except Exception as e:
+            print(f"[-] Failed to update config.yaml: {e}")
+            return 1
+        return 0
+
+    print("[*] Configuring Hermes (~/.hermes/config.yaml) with automatic failover...")
     try:
-        import yaml
-        config_data = {}
-        if config_file.exists():
-            with open(config_file, "r", encoding="utf-8") as f:
-                config_data = yaml.safe_load(f) or {}
-
-        if "model" not in config_data or not isinstance(config_data["model"], dict):
-            config_data["model"] = {}
-
-        config_data["model"]["default"] = model_name
-        config_data["model"]["provider"] = "antigravity"
-        config_data["model"]["base_url"] = base_url
-
-        with open(config_file, "w", encoding="utf-8") as f:
-            yaml.dump(config_data, f, default_flow_style=False)
-        print(f"[+] Hermes configured to use Antigravity:")
-        print(f"    model.provider: antigravity")
-        print(f"    model.default:  {model_name}")
-        print(f"    model.base_url: {base_url}")
+        if getattr(args, "as_fallback_only", False):
+            configure_priority_fallback(
+                hermes_dir,
+                antigravity_model=model_name,
+                port=port,
+                set_primary=False,
+            )
+        else:
+            configure_priority_fallback_preserving_existing_primary(
+                hermes_dir,
+                antigravity_model=model_name,
+                port=port,
+            )
+        print("[+] Hermes configured with zero-touch failover chain:")
+        if getattr(args, "as_fallback_only", False):
+            print("    1. antigravity  (unchanged primary provider stays first)")
+            print(f"    2. openai-codex  ({DEFAULT_OPENAI_FALLBACK_MODEL})")
+            print(f"    3. anthropic     ({DEFAULT_ANTHROPIC_FALLBACK_MODEL})")
+        else:
+            print(f"    Primary:  antigravity  ({model_name}) — {_pool_account_count()} Google account(s) rotate internally on rate limit")
+            print(f"    Fallback 1: openai-codex  ({DEFAULT_OPENAI_FALLBACK_MODEL})")
+            print(f"    Fallback 2: anthropic     ({DEFAULT_ANTHROPIC_FALLBACK_MODEL})")
+        print("    No manual action needed — Hermes rotates automatically on rate limit / quota / auth failure.")
+        print("    Run 'hermes fallback list' to inspect or 'hermes fallback remove' to adjust.")
     except Exception as e:
         print(f"[-] Failed to update config.yaml: {e}")
         return 1
 
     return 0
+
+
+def _pool_account_count() -> int:
+    """Best-effort count of stored Antigravity Google accounts, for the setup banner."""
+    try:
+        mgr = AntigravityAuthManager()
+        return len(mgr.load_all_stored_credentials())
+    except Exception:
+        return 0
 
 
 def main() -> int:
@@ -335,6 +525,19 @@ def main() -> int:
     p_setup = subparsers.add_parser("setup", help="Auto-configure Hermes to use Antigravity")
     p_setup.add_argument("--model", type=str, default="gemini-3.7-flash", help="Default model name")
     p_setup.add_argument("--port", type=int, default=DEFAULT_BRIDGE_PORT)
+    p_setup.add_argument(
+        "--no-fallback",
+        action="store_true",
+        help="Set antigravity as the primary provider WITHOUT the automatic "
+        "openai-codex/anthropic failover chain (legacy behavior).",
+    )
+    p_setup.add_argument(
+        "--as-fallback-only",
+        action="store_true",
+        help="Do not change the current primary provider — only append "
+        "antigravity, openai-codex, and anthropic to the fallback chain so "
+        "the existing primary rotates through them automatically on failure.",
+    )
 
     args = parser.parse_args()
 
