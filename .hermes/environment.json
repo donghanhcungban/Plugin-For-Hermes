@@ -8,6 +8,7 @@
       "python -m compileall -q bridge plugin install.py manage.py tests"
     ],
     "test": [
+      "python -m unittest discover -s tests -p \"test_*.py\" -v",
       "python tests/verify_integration.py"
     ],
     "start": null,

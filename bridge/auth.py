@@ -96,6 +96,8 @@ class AntigravityCredentials:
     managed_project_id: str = ""
     tier_id: str = ""
     source: str = "oauth_pkce"
+    unavailable_until: float = 0.0
+    last_failure_status: int = 0
 
     @property
     def is_expired(self) -> bool:
@@ -116,6 +118,8 @@ class AntigravityCredentials:
             "managed_project_id": self.managed_project_id,
             "tier_id": self.tier_id,
             "source": self.source,
+            "unavailable_until": self.unavailable_until,
+            "last_failure_status": self.last_failure_status,
             "updated_at": time.time(),
         }
 
@@ -130,6 +134,8 @@ class AntigravityCredentials:
             managed_project_id=data.get("managed_project_id") or "",
             tier_id=data.get("tier_id") or "",
             source=data.get("source") or "stored",
+            unavailable_until=float(data.get("unavailable_until") or 0.0),
+            last_failure_status=int(data.get("last_failure_status") or 0),
         )
 
 
@@ -139,7 +145,7 @@ class AntigravityAuthManager:
     def __init__(self, auth_file: Optional[Path] = None) -> None:
         self._auth_file_is_custom = auth_file is not None
         self.auth_file = auth_file or (get_hermes_dir() / "auth" / "antigravity_tokens.json")
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     @property
     def token_file(self) -> Path:
@@ -203,6 +209,96 @@ class AntigravityAuthManager:
                     return c
         return all_creds[0]
 
+    def resolve_credential_candidates(
+        self, bearer_token: str = ""
+    ) -> List[AntigravityCredentials]:
+        """Return usable accounts in failover order, refreshing as needed."""
+        with self._lock:
+            all_creds = self.load_all_stored_credentials()
+            if not all_creds:
+                discovered = self.discover_local_tokens()
+                if discovered:
+                    self.save_credentials(discovered)
+                    all_creds = [discovered]
+
+            if not all_creds:
+                raise RuntimeError(
+                    "No Antigravity OAuth credentials found. Please run "
+                    "'python manage.py login'."
+                )
+
+            def matches_bearer(creds: AntigravityCredentials) -> bool:
+                if not bearer_token:
+                    return False
+                return bool(
+                    creds.access_token == bearer_token
+                    or (
+                        bearer_token.startswith("ya29.")
+                        and creds.access_token.startswith(bearer_token[:20])
+                    )
+                    or creds.email == bearer_token
+                    or creds.email.startswith(bearer_token)
+                )
+
+            all_creds.sort(key=lambda creds: not matches_bearer(creds))
+            now = time.time()
+            candidates: List[AntigravityCredentials] = []
+            for creds in all_creds:
+                if creds.unavailable_until > now:
+                    continue
+                if creds.is_expired:
+                    if not creds.refresh_token:
+                        continue
+                    try:
+                        creds = self.refresh_access_token(creds)
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to refresh Antigravity account %s: %s",
+                            creds.email or "unknown",
+                            exc,
+                        )
+                        self.mark_account_unavailable(creds, 401)
+                        continue
+                if not creds.project_id:
+                    creds.project_id = self.resolve_project_id(creds)
+                    self.save_credentials(creds)
+                candidates.append(creds)
+
+            if not candidates:
+                earliest = min(
+                    (c.unavailable_until for c in all_creds if c.unavailable_until > now),
+                    default=0.0,
+                )
+                wait_seconds = max(0, int(earliest - now)) if earliest else 0
+                suffix = f" Retry in about {wait_seconds}s." if wait_seconds else ""
+                raise RuntimeError(
+                    "All Antigravity OAuth accounts are unavailable or expired." + suffix
+                )
+            return candidates
+
+    def mark_account_unavailable(
+        self,
+        creds: AntigravityCredentials,
+        status_code: int,
+        retry_after: Optional[str] = None,
+    ) -> None:
+        """Persist a per-account cooldown after auth, quota, or server failure."""
+        defaults = {401: 300, 402: 3600, 403: 3600, 429: 3600}
+        cooldown = defaults.get(status_code, 60)
+        if retry_after:
+            with contextlib.suppress(ValueError, TypeError):
+                cooldown = max(1, int(float(retry_after)))
+        with self._lock:
+            creds.unavailable_until = time.time() + cooldown
+            creds.last_failure_status = int(status_code)
+            self.save_credentials(creds)
+        logger.warning(
+            "Antigravity account %s entered cooldown for %ss after HTTP %s",
+            creds.email or "unknown",
+            cooldown,
+            status_code,
+        )
+
     def save_credentials(self, creds: AntigravityCredentials) -> None:
         """Save credentials atomically preserving all accounts and syncing to all profile auth stores."""
         if self._auth_file_is_custom:
@@ -248,6 +344,9 @@ class AntigravityAuthManager:
                     shutil.move(str(tmp_path), str(tf))
                 except Exception as e:
                     logger.debug("Failed saving token file to %s: %s", tf, e)
+
+            if self._auth_file_is_custom:
+                return
 
             # Build pool entries
             pool_entries = []
