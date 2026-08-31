@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "recipe": {
+    "name": "Hermes Antigravity OAuth Plugin",
+    "kind": "python-plugin",
+    "bootstrap": [],
+    "build": [
+      "python -m compileall -q bridge plugin install.py manage.py tests"
+    ],
+    "test": [
+      "python tests/verify_integration.py"
+    ],
+    "start": null,
+    "port": null,
+    "readinessPath": "/health",
+    "evidence": [
+      "bridge",
+      "plugin",
+      "install.py",
+      "manage.py",
+      "tests/verify_integration.py"
+    ]
+  }
+}
