@@ -15,6 +15,7 @@
 - **🖥️ IDE Simulation** — Giả lập hoàn toàn môi trường Antigravity IDE (headers, fingerprint, API endpoint)
 - **📡 Bridge Server** — Server cục bộ port 8100, API tương thích OpenAI format
 - **🧠 9 Models** — Đồng bộ 100% danh mục mô hình từ Antigravity IDE thật
+- **🔄 In-Account Model Fallback** — Tự động thử model dự phòng cùng tài khoản (Gemini 3.7 Flash → Claude Sonnet 4.6) khi model chính hết quota, trước khi xoay tài khoản hoặc dùng provider ngoài
 
 ### Tích hợp Dashboard
 - **Tab Keys (`/env`):** Thẻ kết nối OAuth, hiển thị email, token, thời hạn
@@ -262,6 +263,12 @@ Plugin giả lập hoàn toàn môi trường Antigravity IDE thật:
 ---
 
 ## 📝 Changelog
+
+### v2.2.0 (31/08/2026)
+- ✅ Thêm cơ chế **In-Account Model Fallback**: tự động chuyển đổi sang `claude-sonnet-4-6` khi hết quota Gemini trên cùng tài khoản Google trước khi xoay tài khoản trong pool.
+- ✅ Tối ưu hóa **Priority Fallback**: tự động gộp cấu hình theo nhà cung cấp (provider-level deduplication) tránh trùng lặp model mặc định khi nâng cấp/cài đặt.
+- ✅ Bảo toàn model tùy chỉnh của người dùng khi cài đè hoặc nâng cấp plugin.
+- ✅ Bổ sung bộ test suite hoàn chỉnh bao gồm kiểm thử logic fallback và deduplication.
 
 ### v2.1.0 (31/08/2026)
 - ✅ Fix `thoughtSignature` handling cho Gemini 3 tool calling
