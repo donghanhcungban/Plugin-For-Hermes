@@ -2,7 +2,7 @@
 
 > **Plugin mở rộng cho Hermes Agent**, cho phép tích hợp và sử dụng toàn bộ tài nguyên mô hình AI cao cấp từ tài khoản **Google Antigravity OAuth** (Gemini 3.7 Flash, Claude Sonnet/Opus 4.6, GPT-OSS 120B) vào Hermes Agent — qua CLI, Telegram, Discord, Dashboard và mọi nền tảng khác.
 
-**Phiên bản:** 2.1.0 — Cập nhật: 31/08/2026
+**Phiên bản:** 1.0.0 — Cập nhật: 31/08/2026
 
 ---
 
@@ -249,13 +249,13 @@ Plugin giả lập hoàn toàn môi trường Antigravity IDE thật:
 > **A:** Hoàn toàn **KHÔNG**. Plugin lưu tại `~/.hermes/plugins/`, token tại `~/.hermes/auth/` — nằm ngoài git repo. Nếu cần đồng bộ lại, chạy `python install.py`.
 
 #### Q: Bridge bị crash liên tục?
-> **A:** Phiên bản 2.1.0 đã fix lỗi `ConnectionResetError`. Gateway sẽ tự khởi lại bridge qua `ensure_antigravity_bridge_running()`. Không cần restart thủ công.
+> **A:** Phiên bản 1.0.0 đã fix lỗi `ConnectionResetError`. Gateway sẽ tự khởi lại bridge qua `ensure_antigravity_bridge_running()`. Không cần restart thủ công.
 
 #### Q: Làm sao ngắt kết nối?
 > **A:** Dashboard → Tab Keys → **[DISCONNECT]** tại thẻ Antigravity. Hoặc xóa file `~/.hermes/auth/antigravity_tokens.json`.
 
 #### Q: `hermes auth add antigravity` chỉ hỏi API key?
-> **A:** Phiên bản 2.1.0 đã fix — giờ sẽ hỏi "API key hay OAuth?" → chọn OAuth → mở browser.
+> **A:** Phiên bản 1.0.0 đã fix — giờ sẽ hỏi "API key hay OAuth?" → chọn OAuth → mở browser.
 
 #### Q: Config fallback dùng model không có trong IDE?
 > **A:** Bridge tự map model không hợp lệ (VD: `gemini-3.7-pro`) → `gemini-3-flash-agent`. Không gây lỗi.
@@ -264,25 +264,14 @@ Plugin giả lập hoàn toàn môi trường Antigravity IDE thật:
 
 ## 📝 Changelog
 
-### v2.2.0 (31/08/2026)
+### v1.0.0 (31/08/2026)
+- ✅ Phiên bản đầu tiên tích hợp đầy đủ OAuth PKCE, bridge server cục bộ, auto-failover đa tài khoản.
 - ✅ Thêm cơ chế **In-Account Model Fallback**: tự động chuyển đổi sang `claude-sonnet-4-6` khi hết quota Gemini trên cùng tài khoản Google trước khi xoay tài khoản trong pool.
 - ✅ Tối ưu hóa **Priority Fallback**: tự động gộp cấu hình theo nhà cung cấp (provider-level deduplication) tránh trùng lặp model mặc định khi nâng cấp/cài đặt.
 - ✅ Bảo toàn model tùy chỉnh của người dùng khi cài đè hoặc nâng cấp plugin.
 - ✅ Bổ sung bộ test suite hoàn chỉnh bao gồm kiểm thử logic fallback và deduplication.
-
-### v2.1.0 (31/08/2026)
-- ✅ Fix `thoughtSignature` handling cho Gemini 3 tool calling
-- ✅ Fix `ConnectionResetError` crash trong bridge server
-- ✅ Fix `joined_system` UnboundLocalError trên empty payload
-- ✅ Thêm `ensure_antigravity_bridge_running()` daemon auto-wake
-- ✅ Thêm `supports_vision=True` cho multimodal
-- ✅ Thêm `hermes auth add antigravity` OAuth flow trong CLI
-- ✅ Xóa model ảo `gemini-3.7-pro` (không tồn tại trong IDE)
-- ✅ Đồng bộ model catalog: 10 → 9 models (khớp IDE thật)
-- ✅ Cập nhật `MODEL_ALIAS_MAP` + `VALID_CODE_ASSIST_MODELS`
-
-### v2.0.0 (28/08/2026)
-- Phiên bản đầu tiên với OAuth PKCE, bridge server, multi-account
+- ✅ Khắc phục hoàn toàn lỗi `thoughtSignature` và `ConnectionResetError` trong server bridge.
+- ✅ Đồng bộ model catalog: 9 mô hình khớp hoàn chỉnh với danh mục IDE thật.
 
 ---
 

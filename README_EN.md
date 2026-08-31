@@ -2,7 +2,7 @@
 
 > **Extension plugin for Hermes Agent** that integrates premium AI models from **Google Antigravity OAuth** (Gemini 3.7 Flash, Claude Sonnet/Opus 4.6, GPT-OSS 120B) into Hermes Agent — across CLI, Telegram, Discord, Dashboard, and every other platform.
 
-**Version:** 2.1.0 — Updated: 31/08/2026
+**Version:** 1.0.0 — Updated: 31/08/2026
 
 ---
 
@@ -249,13 +249,13 @@ The plugin fully emulates the real Antigravity IDE environment:
 > **A:** Absolutely **NO**. Plugin is stored at `~/.hermes/plugins/`, tokens at `~/.hermes/auth/` — outside the git repo. If you need to re-sync after a fresh install, just run `python install.py`.
 
 #### Q: The bridge keeps crashing?
-> **A:** Version 2.1.0 fixed the `ConnectionResetError` crash. The gateway will auto-restart the bridge via `ensure_antigravity_bridge_running()`. No manual restart needed.
+> **A:** Version 1.0.0 fixed the `ConnectionResetError` crash. The gateway will auto-restart the bridge via `ensure_antigravity_bridge_running()`. No manual restart needed.
 
 #### Q: How do I disconnect my Google account?
 > **A:** Dashboard → Keys tab → **[DISCONNECT]** on the Antigravity card. Or delete `~/.hermes/auth/antigravity_tokens.json`.
 
 #### Q: `hermes auth add antigravity` only asks for API key?
-> **A:** Fixed in v2.1.0 — it now offers "API key or OAuth?" → select OAuth → opens browser.
+> **A:** Fixed in v1.0.0 — it now offers "API key or OAuth?" → select OAuth → opens browser.
 
 #### Q: My config uses a model that doesn't exist in IDE?
 > **A:** The bridge auto-maps invalid model names (e.g. `gemini-3.7-pro`) → `gemini-3-flash-agent`. No errors will occur.
@@ -264,22 +264,10 @@ The plugin fully emulates the real Antigravity IDE environment:
 
 ## 📝 Changelog
 
-### v2.1.0 (31/08/2026)
-- ✅ Fixed `thoughtSignature` handling for Gemini 3 tool calling
-- ✅ Fixed `ConnectionResetError` crash in bridge server
-- ✅ Fixed `joined_system` UnboundLocalError on empty payloads
-- ✅ Added `ensure_antigravity_bridge_running()` daemon auto-wake
-- ✅ Added `supports_vision=True` for multimodal support
-- ✅ Added `hermes auth add antigravity` OAuth flow in CLI
-- ✅ Removed phantom model `gemini-3.7-pro` (doesn't exist in IDE)
-- ✅ Synced model catalog: 10 → 9 models (matching real IDE)
-- ✅ Updated `MODEL_ALIAS_MAP` & `VALID_CODE_ASSIST_MODELS`
-
-### v2.0.0 (28/08/2026)
-- Initial release with OAuth PKCE, bridge server, multi-account pool
-
----
-
-## 📄 License
-Built for the Hermes Agent & Antigravity community.
-Compatible with MIT / Apache 2.0 license.
+### v1.0.0 (31/08/2026)
+- ✅ Initial release with OAuth PKCE, bridge server, and multi-account pool.
+- ✅ Added **In-Account Model Fallback**: auto-switch to `claude-sonnet-4-6` on Gemini quota exhaustion on the same Google account.
+- ✅ Optimized **Priority Fallback**: provider-level deduplication to prevent duplicate default models and preserve user customizations.
+- ✅ Full test suite covering failover, model rotation, and fallback deduplication.
+- ✅ Fixed `thoughtSignature` handling and `ConnectionResetError` crash.
+- ✅ Synced model catalog: 9 models matching real IDE.
