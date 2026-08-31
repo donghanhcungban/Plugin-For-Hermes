@@ -75,11 +75,17 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     log_fd = open(log_file, "a", encoding="utf-8")
 
+    installed_layout = (PLUGIN_ROOT / "tools" / "antigravity_bridge" / "server.py").is_file()
+    server_import = (
+        "from tools.antigravity_bridge.server import run_server"
+        if installed_layout
+        else "from bridge.server import run_server"
+    )
     cmd = [
         sys.executable,
         "-u",
         "-c",
-        f"import sys; sys.path.insert(0, r'{PLUGIN_ROOT}'); sys.path.insert(0, r'{REPO_ROOT}'); from bridge.server import run_server; run_server(host='{host}', port={port})",
+        f"import sys; sys.path.insert(0, r'{PLUGIN_ROOT}'); sys.path.insert(0, r'{REPO_ROOT}'); {server_import}; run_server(host='{host}', port={port})",
     ]
 
     env = dict(os.environ)
@@ -177,7 +183,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  Token Storage:   {auth_mgr.token_file}")
         if creds.expires_at:
             exp_str = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(creds.expires_at))
-            status_text = "EXPIRED (Will auto-refresh)" if creds.is_expired() else "VALID"
+            status_text = "EXPIRED (Will auto-refresh)" if creds.is_expired else "VALID"
             print(f"  Token Expiry:    {exp_str} [{status_text}]")
         print(f"  Refresh Token:   {'AVAILABLE' if creds.refresh_token else 'NOT FOUND'}")
     else:

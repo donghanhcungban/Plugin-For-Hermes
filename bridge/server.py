@@ -256,11 +256,13 @@ def ensure_antigravity_bridge_running(
         "-c",
         f"from tools.antigravity_bridge.server import run_server; run_server(host='{host}', port={port})",
     ]
+    package_root = Path(__file__).resolve().parents[2]
 
     try:
         if sys.platform == "win32":
             subprocess.Popen(
                 cmd,
+                cwd=str(package_root),
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -269,6 +271,7 @@ def ensure_antigravity_bridge_running(
         else:
             subprocess.Popen(
                 cmd,
+                cwd=str(package_root),
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

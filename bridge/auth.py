@@ -19,6 +19,7 @@ import re
 import secrets
 import shutil
 import stat
+import sys
 import threading
 import time
 import urllib.error
