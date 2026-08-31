@@ -1,7 +1,7 @@
 ---
 name: antigravity-oauth-bridge
-description: "Antigravity OAuth plugin: multi-account Gemini/Claude."
-version: 1.0.0
+description: "Plugin Antigravity OAuth: Tự động chuyển đổi/xoay tài khoản Gemini/Claude."
+version: 1.1.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -11,194 +11,108 @@ metadata:
     related_skills: [hermes-agent, native-mcp]
 ---
 
-# Antigravity OAuth Bridge Plugin
+# Plugin Antigravity OAuth Bridge cho Hermes Agent
 
-## When to Use
+## Khi nào cần dùng
 
-Use when the user wants to install, configure, or debug the Antigravity OAuth
-model-provider plugin for Hermes Agent, or wants to add/rotate multiple Google
-accounts for it.
+Sử dụng khi người dùng muốn cài đặt, cấu hình, hoặc gỡ lỗi plugin **Antigravity OAuth model-provider** cho Hermes Agent, hoặc muốn thêm/xoay nhiều tài khoản Google để sử dụng hạn ngạch (quota) tốt hơn.
 
-Community model-provider plugin that lets Hermes Agent call Gemini 3.7/3.6/3.5/3.1,
-Claude Sonnet/Opus 4.6, and GPT-OSS 120B through a **Google Antigravity IDE OAuth**
-login — no API key purchase, uses the free/subscription Antigravity quota. It works
-by running a small local HTTP bridge (`127.0.0.1:8100`) that speaks the OpenAI Chat
-Completions API and translates requests to Google's internal Code Assist endpoint,
-simulating the real Antigravity IDE client fingerprint.
+Plugin này cho phép Hermes Agent gọi các mô hình AI cao cấp như Gemini 3.7/3.6/3.5/3.1, Claude Sonnet/Opus 4.6, và GPT-OSS 120B thông qua đăng nhập **Google Antigravity IDE OAuth** (sử dụng hạn ngạch miễn phí hoặc trả phí đi kèm tài khoản của bạn, không cần mua API key riêng lẻ). Nó hoạt động bằng cách chạy một HTTP Bridge cục bộ (`127.0.0.1:8100`) tương thích với OpenAI Chat Completions API và dịch ngược request sang endpoint Code Assist nội bộ của Google.
 
-**Repo:** the plugin ships from this skill's sibling repo (clone or vendor
-`bridge/`, `plugin/`, `install.py`, `manage.py` from wherever this skill package
-was distributed — e.g. a GitHub repo named `Plugin-For-Hermes` or
-`Hermes-Antigravity-OAuth-Plugin`).
-
-## Install
+## Cài đặt (Install)
 
 ```bash
 python install.py
 ```
 
-This copies:
-- `plugin/` → `$HERMES_HOME/plugins/model-providers/antigravity/` (registers the
-  `antigravity` provider with Hermes — model picker, `--provider antigravity`, etc.)
-- `bridge/` → `$HERMES_HOME/bridge/antigravity/tools/antigravity_bridge/` (the
-  runtime engine: OAuth, request/response translation, HTTP server)
-- `manage.py` → `$HERMES_HOME/bridge/antigravity/manage.py` (CLI to control it)
+Lệnh này sẽ sao chép các thư mục tương ứng:
+- `plugin/` → `$HERMES_HOME/plugins/model-providers/antigravity/` (Đăng ký provider `antigravity` với model picker của Hermes).
+- `bridge/` → `$HERMES_HOME/bridge/antigravity/tools/antigravity_bridge/` (Mã nguồn chạy server bridge, OAuth và dịch request).
+- `manage.py` → `$HERMES_HOME/bridge/antigravity/manage.py` (CLI quản lý).
 
-If run from inside a hermes-agent git checkout, it also syncs into that repo's
-`plugins/model-providers/antigravity/` and `tools/antigravity_bridge/` so a local
-dev build picks it up too.
+Nếu chạy từ bên trong thư mục git clone của hermes-agent, nó cũng tự động đồng bộ vào các thư mục dev cục bộ để kiểm thử trực tiếp.
 
-## Login (single or multiple Google accounts)
+## Đăng nhập (Một hoặc nhiều tài khoản Google)
 
 ```bash
 python "$HERMES_HOME/bridge/antigravity/manage.py" login
 ```
 
-Opens a browser for Google OAuth PKCE. **Run `login` again for each additional
-Google account** — pick "Use another account" in the browser each time. Every
-successful login is appended (keyed by email) to
-`$HERMES_HOME/auth/antigravity_tokens.json` under an `accounts` map; nothing is
-overwritten. Two or three accounts is a good pool size for personal use.
+Trình duyệt sẽ mở trang Google OAuth PKCE. **Chạy lại lệnh `login` cho từng tài khoản Google bổ sung** mà bạn muốn thêm vào pool xoay vòng (chọn "Sử dụng tài khoản khác" trên trình duyệt). Mọi đăng nhập thành công sẽ được lưu trữ (theo email) vào file cấu hình tài khoản `$HERMES_HOME/auth/antigravity_tokens.json`. Cấu hình từ 2-3 tài khoản Google là lý tưởng cho nhu cầu cá nhân.
 
 ```bash
-python "$HERMES_HOME/bridge/antigravity/manage.py" status   # shows the primary account + token health
-python "$HERMES_HOME/bridge/antigravity/manage.py" start    # starts the bridge daemon on :8100
-python "$HERMES_HOME/bridge/antigravity/manage.py" stop
+python "$HERMES_HOME/bridge/antigravity/manage.py" status   # Xem tài khoản chính + trạng thái token
+python "$HERMES_HOME/bridge/antigravity/manage.py" start    # Khởi động bridge daemon tại cổng 8100
+python "$HERMES_HOME/bridge/antigravity/manage.py" stop     # Dừng bridge daemon
 ```
 
-Hermes auto-wakes the bridge on first use via
-`ensure_antigravity_bridge_running()` in the plugin's `build_extra_body` hook, so
-`start` is mostly for manual testing.
+Plugin tự động kích hoạt Bridge khi sử dụng qua hàm hook `ensure_antigravity_bridge_running()`, do đó bạn không cần khởi động Bridge thủ công thường xuyên.
 
-## Cross-provider auto-failover (zero-touch, on by default)
+## Tự động chuyển đổi nhà cung cấp ngoài (Cross-provider auto-failover)
 
-`install.py` (and `manage.py setup`) don't stop at making Antigravity usable —
-they configure Hermes' own `fallback_providers` chain automatically, so
-**nothing manual is required** to survive a rate limit:
+Script `install.py` (hoặc `manage.py setup`) tự động thiết lập chuỗi `fallback_providers` trong cấu hình của Hermes để tự động dự phòng nếu toàn bộ tài khoản Google trong pool của bạn bị hết hạn ngạch:
 
 ```
-Primary:  antigravity (gemini-3.7-flash)  — N Google accounts rotate internally first
-Fallback 1: openai-codex (gpt-5-codex)
-Fallback 2: anthropic (claude-sonnet-4-6)
+Chính:    antigravity (gemini-3.7-flash) — Xoay vòng nội bộ tài khoản Google trước
+Dự phòng 1: openai-codex (gpt-5-codex)
+Dự phòng 2: anthropic (claude-sonnet-4-6)
 ```
 
-The full failure path, with zero user interaction at every layer:
+Quy trình xử lý lỗi tự động không cần người dùng can thiệp:
+1. Tài khoản Google #1 bị lỗi 429 hoặc hết quota.
+2. Bridge tự động xoay sang tài khoản Google #2, #3 trong pool.
+3. Khi toàn bộ tài khoản Google trong pool hết quota:
+   * Kích hoạt cơ chế fallback của Hermes chuyển sang `openai-codex`.
+   * Nếu `openai-codex` cũng lỗi hoặc rate limit, chuyển tiếp sang `anthropic`.
 
+Cơ chế này được thực thi bởi hàm `configure_priority_fallback_preserving_existing_primary` trong `manage.py`, chỉnh sửa trực tiếp `$HERMES_HOME/config.yaml`. Nó không đè hoặc nhân bản các fallback có sẵn của người dùng.
+
+Tùy chỉnh khi cài đặt:
+```bash
+python manage.py setup --no-fallback          # Chỉ dùng antigravity làm chính, không tạo chuỗi dự phòng
+python manage.py setup --as-fallback-only     # Giữ provider chính hiện tại của bạn, chỉ THÊM chuỗi dự phòng antigravity + openai-codex + anthropic
 ```
-antigravity account #1 hits 429/quota
-  → antigravity rotates internally to account #2, #3, ... (bridge/auth.py)
-  → all antigravity accounts exhausted
-    → Hermes' own fallback_providers chain kicks in: openai-codex
-      → openai-codex also fails/rate-limited
-        → anthropic
+
+Bạn cũng có thể điều chỉnh bất kỳ lúc nào bằng CLI của Hermes:
+```bash
+hermes fallback list      # Liệt kê chuỗi dự phòng hiện tại
+hermes fallback remove    # Xóa một cấu hình dự phòng
+hermes fallback clear     # Xóa toàn bộ chuỗi dự phòng
+hermes fallback add       # Thêm cấu hình dự phòng mới bằng giao diện tương tác
 ```
 
-This is implemented by `manage.py`'s `apply_priority_fallback_config()` /
-`configure_priority_fallback()`, called automatically as step 5 of
-`install.py`. It edits `$HERMES_HOME/config.yaml`:
+## Tự động xoay tài khoản & model nội bộ (Failover hoạt động thế nào)
 
-- `model.provider: antigravity`, `model.default: gemini-3.7-flash` (primary)
-- `fallback_providers: [{provider: openai-codex, model: gpt-5-codex},
-  {provider: anthropic, model: claude-sonnet-4-6}]`
-- Never duplicates entries already present in `fallback_providers` — merges,
-  doesn't clobber, so re-running `install.py`/`setup` is idempotent and safe
-  alongside a user's own manually-added fallback entries.
+Cơ chế xoay vòng tài khoản và model được cài đặt trong `AntigravityAuthManager` (`bridge/auth.py`) và `AntigravityClient` (`bridge/client.py`):
 
-Opt out or adjust at install time:
+1. **In-Account Model Fallback (Tính năng mới)**: Khi request mô hình chính (`gemini-3.7-flash`) bị lỗi hết quota (HTTP 429 / RESOURCE_EXHAUSTED) trên một tài khoản, bridge sẽ tự động thử mô hình dự phòng (`claude-sonnet-4-6`) trên **cùng tài khoản đó** trước khi quyết định chuyển sang tài khoản Google khác. Điều này do Gemini và Claude sử dụng hạn ngạch độc lập trên cùng một tài khoản Antigravity.
+2. **Xoay tài khoản Google**: Nếu cả hai mô hình trên tài khoản hiện tại đều không sử dụng được, bridge sẽ tìm tài khoản tiếp theo không nằm trong thời gian cooldown để thực hiện request (cả chế độ thường lẫn streaming).
+3. **Thời gian Cooldown**: Lỗi 401 → Cooldown 5 phút; Lỗi 402/403/429 → Cooldown 1 giờ (hoặc theo header `Retry-After` từ server); Các lỗi khác → 60 giây. Trạng thái cooldown được lưu trên đĩa cứng (`unavailable_until`) để duy trì ngay cả khi khởi động lại bridge.
+4. **Endpoint Fallback**: Nếu gặp lỗi hệ thống `5xx` từ endpoint chính, bridge sẽ thử gọi endpoint dự phòng (`cloudcode-pa.googleapis.com`) với cùng tài khoản trước khi xoay tài khoản, tránh việc lãng phí thời gian cooldown do lỗi mạng tạm thời.
+
+## Kiểm tra hoạt động (Verifying it works)
 
 ```bash
-python manage.py setup --no-fallback          # antigravity primary, no auto fallback chain
-python manage.py setup --as-fallback-only     # keep your current primary provider;
-                                                # only ADD antigravity + openai-codex +
-                                                # anthropic to the fallback chain
+export ANTIGRAVITY_API_KEY=antigravity-local-token   # Giá trị bất kỳ không rỗng
+hermes chat -q "Phản hồi chính xác chữ: OK" --provider antigravity -m gemini-3.7-flash
 ```
 
-Or any time afterward with Hermes' own CLI:
-
-```bash
-hermes fallback list      # inspect the chain
-hermes fallback remove    # drop one entry
-hermes fallback clear     # remove all
-hermes fallback add       # add another provider interactively
-```
-
-This cross-provider layer complements, but is separate from, the
-multi-account rotation *within* `antigravity` documented below — Hermes'
-`fallback_providers` only activates once every antigravity account is
-cooling down (or on connection/5xx errors this bridge doesn't recover from
-internally).
-
-## Multi-account failover (how it behaves)
-
-`bridge/auth.py`'s `AntigravityAuthManager` and `bridge/client.py`'s
-`AntigravityClient` implement account rotation:
-
-- `resolve_credential_candidates()` returns every stored account NOT currently in
-  cooldown, refreshing expired access tokens on the way (refresh failure cools
-  that account for 5 min and moves on — never raises past a usable account).
-- A bearer token passed to the bridge (e.g. a specific `Authorization: Bearer
-  <email-or-token-prefix>`) is tried first if present, then the rest.
-- On `401`/`402`/`403`/`429`, or a `200`-status body containing
-  `RESOURCE_EXHAUSTED`/quota/invalid_grant markers, the current account is
-  cooled down (`mark_account_unavailable`) and the **next** account is tried —
-  for both non-streaming `create_chat_completion` and streaming
-  `stream_chat_completion` (streaming fails over before the first SSE chunk is
-  emitted, so a client never sees a half-started then aborted stream).
-- On a primary-endpoint `5xx`, the SAME account retries the documented Google
-  fallback host (`cloudcode-pa.googleapis.com`) before rotating accounts — a
-  transient regional outage does not burn every account's cooldown.
-- Cooldown durations: 401 → 5 min, 402/403/429 → 1 hour (or the server's
-  `Retry-After` header if present, capped to that value), everything else → 60s.
-  Cooldowns persist to disk (`unavailable_until` in each account's record) and
-  survive a bridge restart.
-- When every account is cooling down, the bridge raises a clear error naming the
-  soonest retry window instead of a bare 429.
-
-Credentials created with a **custom auth_file** (e.g. in unit tests via
-`AntigravityAuthManager(auth_file=<tmp path>)`) never sync to the global
-`$HERMES_HOME/auth.json` credential pool — only the default (no `auth_file`
-override) manager does, so tests can't clobber a real user's stored accounts.
-
-## Verifying it works
-
-```bash
-export ANTIGRAVITY_API_KEY=antigravity-local-token   # any non-empty value; the bridge
-                                                        # itself does the real Google auth
-hermes chat -q "Reply with exactly: OK" --provider antigravity -m gemini-3.7-flash
-```
-
-Or check the bridge directly:
-
+Hoặc gọi trực tiếp vào Bridge cục bộ:
 ```bash
 curl http://127.0.0.1:8100/health
-curl http://127.0.0.1:8100/v1/models       # 9 models
-curl http://127.0.0.1:8100/auth/status     # logged_in, email, expires_at
+curl http://127.0.0.1:8100/v1/models       # Trả về 9 models khả dụng
+curl http://127.0.0.1:8100/auth/status     # Trạng thái đăng nhập, email, thời hạn token
 ```
 
-## Model catalog (9 IDs — matches the real Antigravity IDE)
+## Danh mục mô hình (9 IDs khớp với Antigravity IDE thật)
 
-`gemini-3.7-flash`, `gemini-3.7-flash-medium`, `gemini-3.7-flash-low`,
-`gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.1-pro`, `claude-sonnet-4-6`,
-`claude-opus-4-6`, `gpt-oss-120b`. There is no `gemini-3.7-pro` — it doesn't
-exist in the real IDE catalog and was deliberately removed.
+`gemini-3.7-flash`, `gemini-3.7-flash-medium`, `gemini-3.7-flash-low`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.1-pro`, `claude-sonnet-4-6`, `claude-opus-4-6`, `gpt-oss-120b`. 
 
-## Pitfalls
+*(Lưu ý: Không tồn tại mô hình `gemini-3.7-pro` trên hệ thống thật nên mô hình này đã bị loại bỏ).*
 
-- **Windows daemon start needs the right import path.** `manage.py start` must
-  detect whether it's running from the installed layout
-  (`tools/antigravity_bridge/`) or the source layout (`bridge/`) and pick the
-  matching import string — otherwise the spawned daemon dies immediately with
-  `ModuleNotFoundError: No module named 'bridge'` (check
-  `$HERMES_HOME/logs/antigravity_bridge.log` first if `start` reports a
-  healthcheck timeout).
-- `AntigravityCredentials.is_expired` is a **property**, not a method — call it
-  without `()`.
-- Registering the provider so Hermes' CLI/runtime/model-picker all pick it up
-  requires `auth_type="api_key"` with a placeholder `env_vars=("ANTIGRAVITY_API_KEY",)`
-  on the `ProviderProfile`, even though the real auth is Google OAuth handled
-  entirely inside the bridge — Hermes only auto-wires `api_key`-type profiles
-  into `PROVIDER_REGISTRY`/`CANONICAL_PROVIDERS`/`resolve_runtime_provider`.
-- This is a third-party plugin using Google's internal (non-public)
-  `v1internal:generateContent` Code Assist API with IDE-simulating headers.
-  Treat it as best-effort and subject to breakage if Google changes that
-  internal API; usage volume risk applies for 24/7 heavy use through a gateway.
+## Một số điểm lưu ý (Pitfalls)
+
+- **Đường dẫn import trên Windows**: Tiến trình daemon bridge khởi động qua `manage.py start` cần xác định đúng đường dẫn import của `bridge` tùy vào việc chạy từ thư mục cài đặt hay thư mục source code. Nếu bridge không khởi động được, hãy kiểm tra file log tại `$HERMES_HOME/logs/antigravity_bridge.log`.
+- **is_expired**: Thuộc tính `AntigravityCredentials.is_expired` là một **property**, không phải method — gọi không kèm cặp ngoặc đơn `()`.
+- **Cấu hình ProviderProfile**: Để Hermes nhận diện provider qua CLI/Dashboard, `auth_type` bắt buộc phải là `"api_key"` với biến môi trường giả lập là `env_vars=("ANTIGRAVITY_API_KEY",)`, dù thực tế quá trình xác thực OAuth được xử lý hoàn toàn bên trong bridge cục bộ.
+- **Rủi ro sử dụng**: Đây là plugin bên thứ ba sử dụng API nội bộ `v1internal` của Google. Sử dụng với tần suất quá cao (24/7 qua gateway) có thể dẫn đến rủi ro bị hạn chế tài khoản từ phía Google.
