@@ -763,7 +763,7 @@ def main() -> int:
         "login": cmd_login,
         "install": cmd_install,
         "setup": cmd_setup,
-        "setup-claude-code": cmd_setup_claude,
+        "setup-claude-code": cmd_setup_claude_code,
     }
     return handlers[args.action](args)
 
