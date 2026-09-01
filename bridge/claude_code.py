@@ -16,6 +16,7 @@ from typing import Any
 
 
 CLI_MODEL_ALIASES = {
+    "fable": "fable",
     "sonnet": "sonnet",
     "opus": "opus",
     "haiku": "haiku",

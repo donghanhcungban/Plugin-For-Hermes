@@ -26,9 +26,11 @@ models:
   - id: gpt-oss-120b
     name: GPT-OSS 120B (Medium)
 
-  - id: sonnet
-    name: Claude Code Sonnet (Subscription CLI)
+  - id: fable
+    name: Claude Code Fable 5 (Subscription CLI)
   - id: opus
-    name: Claude Code Opus (Subscription CLI)
+    name: Claude Code Opus 5 (Subscription CLI)
+  - id: sonnet
+    name: Claude Code Sonnet 5 (Subscription CLI)
   - id: haiku
     name: Claude Code Haiku (Subscription CLI)
