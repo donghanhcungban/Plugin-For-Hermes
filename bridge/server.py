@@ -11,6 +11,7 @@ Implements standard OpenAI API endpoints:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -42,6 +43,18 @@ except ImportError:
     )
 
 logger = logging.getLogger(__name__)
+
+
+def _upstream_status(exc: Exception) -> int:
+    """Lấy mã HTTP thật từ UpstreamError; các lỗi khác đoán an toàn từ nội dung."""
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and 400 <= status < 600:
+        return status
+    text = str(exc)
+    if "429" in text or "exhausted" in text.lower():
+        return 429
+    return 500
+
 
 DEFAULT_BRIDGE_PORT = 8100
 DEFAULT_BRIDGE_HOST = "127.0.0.1"
@@ -166,7 +179,7 @@ class AntigravityBridgeServer:
                 first_chunk = await stream_gen.__anext__()
             except Exception as e:
                 logger.error("Error connecting to chat completion stream: %s", e)
-                status_code = 429 if "429" in str(e) or "exhausted" in str(e).lower() else (403 if "403" in str(e) else 500)
+                status_code = _upstream_status(e)
                 err_type = "rate_limit_error" if status_code == 429 else "api_error"
                 return web.json_response(
                     {"error": {"message": str(e), "type": err_type, "code": status_code}},
@@ -198,6 +211,11 @@ class AntigravityBridgeServer:
                     logger.debug("Client connection lost during streaming: %s", e)
                 else:
                     logger.error("Unexpected error during streaming: %s", e)
+            finally:
+                # Đóng generator để giải phóng kết nối httpx tới Google ngay,
+                # kể cả khi client ngắt giữa chừng (tránh cạn connection pool).
+                with contextlib.suppress(Exception):
+                    await stream_gen.aclose()
             return response
         else:
             try:
@@ -205,7 +223,7 @@ class AntigravityBridgeServer:
                 return web.json_response(result)
             except Exception as e:
                 logger.error("Error during chat completion: %s", e)
-                status_code = 429 if "429" in str(e) or "exhausted" in str(e).lower() else (403 if "403" in str(e) else 500)
+                status_code = _upstream_status(e)
                 err_type = "rate_limit_error" if status_code == 429 else "api_error"
                 return web.json_response(
                     {"error": {"message": str(e), "type": err_type, "code": status_code}},
