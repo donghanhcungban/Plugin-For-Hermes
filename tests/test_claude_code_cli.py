@@ -12,10 +12,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from bridge.claude_code import ClaudeCodeCliClient, ClaudeCodeCliError
+from bridge.claude_code import CLI_MODEL_ALIASES, ClaudeCodeCliClient, ClaudeCodeCliError
 
 
 class ClaudeCodeCliClientTests(unittest.TestCase):
+    def test_supports_the_four_configured_claude_code_model_aliases(self) -> None:
+        self.assertEqual(
+            {"fable", "opus", "sonnet", "haiku"},
+            {CLI_MODEL_ALIASES[name] for name in ("fable", "opus", "sonnet", "haiku")},
+        )
+
     def test_returns_openai_content_from_structured_cli_result(self) -> None:
         observed: list[list[str]] = []
 

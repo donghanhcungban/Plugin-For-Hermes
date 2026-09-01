@@ -699,7 +699,7 @@ def main() -> int:
     p_setup_claude = subparsers.add_parser(
         "setup-claude-code", help="Use local Claude Code subscription CLI as the Hermes provider"
     )
-    p_setup_claude.add_argument("--model", choices=("sonnet", "opus", "haiku"), default="sonnet")
+    p_setup_claude.add_argument("--model", choices=("fable", "opus", "sonnet", "haiku"), default="sonnet")
     p_setup_claude.add_argument("--port", type=int, default=DEFAULT_BRIDGE_PORT)
 
     p_setup = subparsers.add_parser("setup", help="Auto-configure Hermes to use Antigravity")

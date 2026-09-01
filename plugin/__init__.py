@@ -87,7 +87,7 @@ claude_code_cli = ClaudeCodeCliProfile(
     env_vars=("CLAUDE_CODE_CLI_KEY",),
     base_url="http://127.0.0.1:8100/v1/claude-code",
     auth_type="api_key",
-    fallback_models=("sonnet", "opus", "haiku"),
+    fallback_models=("fable", "opus", "sonnet", "haiku"),
     default_aux_model="sonnet",
     supports_vision=False,
 )
