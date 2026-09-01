@@ -25,3 +25,10 @@ models:
     name: Claude Opus 4.6 (Thinking)
   - id: gpt-oss-120b
     name: GPT-OSS 120B (Medium)
+
+  - id: sonnet
+    name: Claude Code Sonnet (Subscription CLI)
+  - id: opus
+    name: Claude Code Opus (Subscription CLI)
+  - id: haiku
+    name: Claude Code Haiku (Subscription CLI)

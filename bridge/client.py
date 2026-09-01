@@ -9,6 +9,7 @@ Implements:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -24,12 +25,14 @@ try:
         AntigravityAuthManager,
         AntigravityCredentials,
         DEFAULT_PROJECT_ID,
+        UpstreamError,
     )
 except ImportError:
     from tools.antigravity_bridge.auth import (
         AntigravityAuthManager,
         AntigravityCredentials,
         DEFAULT_PROJECT_ID,
+        UpstreamError,
     )
 
 logger = logging.getLogger(__name__)
@@ -605,6 +608,19 @@ def build_code_assist_request(
 # Gemini to OpenAI Response Translation
 # =============================================================================
 
+def _map_finish_reason(gemini_finish: Optional[str]) -> str:
+    """Map finishReason của Gemini sang OpenAI — MAX_TOKENS/SAFETY không được
+    báo là 'stop' sạch, kẻo agent dùng nhầm output đã bị cắt cụt."""
+    mapping = {
+        "MAX_TOKENS": "length",
+        "SAFETY": "content_filter",
+        "RECITATION": "content_filter",
+        "PROHIBITED_CONTENT": "content_filter",
+        "BLOCKLIST": "content_filter",
+    }
+    return mapping.get(gemini_finish or "STOP", "stop")
+
+
 def translate_gemini_to_openai_response(
     gemini_resp: Dict[str, Any],
     requested_model: str,
@@ -616,9 +632,11 @@ def translate_gemini_to_openai_response(
     content_text = ""
     reasoning_text = ""
     tool_calls: List[Dict[str, Any]] = []
+    gemini_finish: Optional[str] = None
 
     if candidates and isinstance(candidates[0], dict):
         cand = candidates[0]
+        gemini_finish = cand.get("finishReason")
         content_obj = cand.get("content") or {}
         parts = content_obj.get("parts") or []
         for part in parts:
@@ -661,7 +679,7 @@ def translate_gemini_to_openai_response(
     if tool_calls:
         message["tool_calls"] = tool_calls
 
-    finish_reason = "tool_calls" if tool_calls else "stop"
+    finish_reason = "tool_calls" if tool_calls else _map_finish_reason(gemini_finish)
 
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
@@ -738,7 +756,9 @@ def translate_gemini_stream_event(
         return None
 
     finish_reason = cand.get("finishReason")
-    openai_finish_reason = "stop" if finish_reason == "STOP" else None
+    openai_finish_reason = (
+        _map_finish_reason(finish_reason) if finish_reason else None
+    )
     if tool_calls:
         openai_finish_reason = "tool_calls"
 
@@ -773,8 +793,11 @@ class AntigravityClient:
         bearer_token: str = "",
     ) -> Dict[str, Any]:
         """Execute a non-streaming chat completion."""
-        candidates = self.auth_manager.resolve_credential_candidates(
-            bearer_token=bearer_token
+        # Chạy trong thread riêng: hàm này có thể gọi mạng đồng bộ (refresh
+        # token, ~20s/tài khoản) — không được chặn event loop của aiohttp.
+        candidates = await asyncio.to_thread(
+            self.auth_manager.resolve_credential_candidates,
+            bearer_token=bearer_token,
         )
         last_response: Optional[httpx.Response] = None
 
@@ -816,9 +839,10 @@ class AntigravityClient:
                             sibling_resp.headers.get("Retry-After"),
                         )
                         continue
-                    raise RuntimeError(
+                    raise UpstreamError(
                         "Antigravity Code Assist failed with HTTP "
-                        f"{sibling_resp.status_code}: {sibling_resp.text}"
+                        f"{sibling_resp.status_code}: {sibling_resp.text}",
+                        status_code=sibling_resp.status_code,
                     )
 
                 self.auth_manager.mark_account_unavailable(
@@ -842,14 +866,18 @@ class AntigravityClient:
                     creds, resp.status_code, resp.headers.get("Retry-After")
                 )
                 continue
-            raise RuntimeError(
-                f"Antigravity Code Assist failed with HTTP {resp.status_code}: {resp.text}"
+            raise UpstreamError(
+                f"Antigravity Code Assist failed with HTTP {resp.status_code}: {resp.text}",
+                status_code=resp.status_code,
             )
 
         if last_response is None:
-            raise RuntimeError("No Antigravity OAuth account is currently available.")
-        raise RuntimeError(
-            f"Antigravity Code Assist failed with HTTP {last_response.status_code}: {last_response.text}"
+            raise UpstreamError(
+                "No Antigravity OAuth account is currently available.", status_code=429
+            )
+        raise UpstreamError(
+            f"Antigravity Code Assist failed with HTTP {last_response.status_code}: {last_response.text}",
+            status_code=last_response.status_code,
         )
 
     async def stream_chat_completion(
@@ -858,12 +886,14 @@ class AntigravityClient:
         bearer_token: str = "",
     ) -> AsyncIterator[str]:
         """Stream SSE, failing over before any chunk is emitted."""
-        candidates = self.auth_manager.resolve_credential_candidates(
-            bearer_token=bearer_token
+        candidates = await asyncio.to_thread(
+            self.auth_manager.resolve_credential_candidates,
+            bearer_token=bearer_token,
         )
         requested_model = openai_payload.get("model") or "gemini-3.7-flash"
         url = f"{CODE_ASSIST_BASE_URL}:streamGenerateContent?alt=sse"
         last_error = "No Antigravity OAuth account is currently available."
+        last_status = 500
 
         for creds in candidates:
             envelope = build_code_assist_request(openai_payload, creds.project_id)
@@ -880,8 +910,17 @@ class AntigravityClient:
                         "Antigravity Code Assist streaming failed with HTTP "
                         f"{response.status_code}: {body.decode('utf-8', 'replace')}"
                     )
+                    last_status = response.status_code
                     if response.status_code >= 500:
-                        raise RuntimeError(last_error)
+                        # Lỗi phía server Google: thử tài khoản kế tiếp thay vì
+                        # văng lỗi ngay (đồng bộ hành vi với đường non-stream).
+                        # Không ghi cooldown — đây không phải lỗi của tài khoản.
+                        logger.warning(
+                            "Streaming endpoint returned %s for %s, rotating account",
+                            response.status_code,
+                            creds.email or "unknown",
+                        )
+                        continue
                     if _should_fail_over(response):
                         self.auth_manager.mark_account_unavailable(
                             creds,
@@ -889,7 +928,7 @@ class AntigravityClient:
                             response.headers.get("Retry-After"),
                         )
                         continue
-                    raise RuntimeError(last_error)
+                    raise UpstreamError(last_error, status_code=response.status_code)
 
                 initial_chunk = {
                     "id": stream_id,
@@ -908,6 +947,7 @@ class AntigravityClient:
 
                 buffer = ""
                 newline = chr(10)
+                sent_finish_reason: Optional[str] = None
                 async for raw_chunk in response.aiter_text():
                     buffer += raw_chunk.replace(chr(13) + newline, newline).replace(chr(13), newline)
                     while newline + newline in buffer:
@@ -925,21 +965,30 @@ class AntigravityClient:
                                     event_obj, requested_model, stream_id
                                 )
                                 if chunk:
+                                    finish_reason = chunk["choices"][0].get("finish_reason")
+                                    if finish_reason:
+                                        sent_finish_reason = finish_reason
                                     yield f"data: {json.dumps(chunk)}\n\n"
                             except Exception as exc:
                                 logger.debug("Failed to parse SSE event: %s", exc)
 
-                final_chunk = {
-                    "id": stream_id,
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": requested_model,
-                    "choices": [
-                        {"index": 0, "delta": {}, "finish_reason": "stop"}
-                    ],
-                }
-                yield f"data: {json.dumps(final_chunk)}\n\n"
+                # Chỉ phát chunk đóng "stop" tổng hợp khi upstream CHƯA từng gửi
+                # finish_reason thật (ví dụ stream bị cắt ngang không rõ lý do).
+                # Gửi thêm "stop" đè lên sau khi đã gửi tool_calls/length/
+                # content_filter khiến client OpenAI-compat hiểu nhầm là hội
+                # thoại kết thúc bình thường, bỏ qua tool call/lý do cắt thật.
+                if sent_finish_reason is None:
+                    final_chunk = {
+                        "id": stream_id,
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": requested_model,
+                        "choices": [
+                            {"index": 0, "delta": {}, "finish_reason": "stop"}
+                        ],
+                    }
+                    yield f"data: {json.dumps(final_chunk)}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
-        raise RuntimeError(last_error)
+        raise UpstreamError(last_error, status_code=last_status)

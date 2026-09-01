@@ -32,6 +32,23 @@ class AntigravityProfile(ProviderProfile):
         return {"thinking_config": reasoning_config}
 
 
+class ClaudeCodeCliProfile(ProviderProfile):
+    """Claude Code subscription CLI through the local OpenAI-compatible bridge."""
+
+    def build_extra_body(self, **context: Any) -> dict[str, Any]:
+        try:
+            from hermes_constants import get_hermes_home
+
+            bridge_root = get_hermes_home() / "bridge" / "antigravity"
+            if bridge_root.is_dir() and str(bridge_root) not in sys.path:
+                sys.path.insert(0, str(bridge_root))
+            from tools.antigravity_bridge.server import ensure_claude_code_bridge_running
+            ensure_claude_code_bridge_running()
+        except Exception:
+            pass
+        return {}
+
+
 antigravity = AntigravityProfile(
     name="antigravity",
     aliases=("google-antigravity", "antigravity-oauth"),
@@ -60,3 +77,19 @@ antigravity = AntigravityProfile(
 )
 
 register_provider(antigravity)
+
+claude_code_cli = ClaudeCodeCliProfile(
+    name="claude-code-cli",
+    aliases=("claude-code", "claude-subscription"),
+    display_name="Claude Code (Subscription CLI)",
+    description="Local Claude Code CLI bridge using an authenticated Claude subscription",
+    signup_url="https://claude.ai",
+    env_vars=("CLAUDE_CODE_CLI_KEY",),
+    base_url="http://127.0.0.1:8100/v1/claude-code",
+    auth_type="api_key",
+    fallback_models=("sonnet", "opus", "haiku"),
+    default_aux_model="sonnet",
+    supports_vision=False,
+)
+
+register_provider(claude_code_cli)

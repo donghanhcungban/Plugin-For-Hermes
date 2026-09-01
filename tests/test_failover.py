@@ -9,6 +9,7 @@ import tempfile
 import threading
 import types
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -337,7 +338,9 @@ class MultiAccountFailoverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen_tokens, ["token-a", "token-b"])
         self.assertEqual(auth.marked, [("a@example.com", 429)])
 
-    async def test_stream_5xx_does_not_cool_or_rotate_account(self) -> None:
+    async def test_stream_5xx_rotates_accounts_without_cooldown(self) -> None:
+        # 5xx là lỗi phía Google: thử tài khoản kế tiếp (không cooldown),
+        # hết tài khoản mới báo lỗi — đồng bộ với đường non-stream.
         auth = FakeAuthManager()
         seen_tokens: list[str] = []
 
@@ -365,8 +368,69 @@ class MultiAccountFailoverTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await client.close()
 
-        self.assertEqual(seen_tokens, ["token-a"])
+        self.assertEqual(seen_tokens, ["token-a", "token-b"])
         self.assertEqual(auth.marked, [])
+
+    async def test_stream_tool_call_finish_reason_is_not_overwritten_by_synthetic_stop(
+        self,
+    ) -> None:
+        # Bug đã sửa: sau khi Gemini gửi finishReason="STOP" kèm functionCall
+        # (dịch sang finish_reason="tool_calls"), bridge từng LUÔN nối thêm một
+        # chunk rỗng finish_reason="stop" ở cuối stream — ghi đè lên tín hiệu
+        # tool_calls thật, khiến client OpenAI-compat tưởng hội thoại đã xong
+        # và bỏ qua lệnh gọi tool.
+        auth = FakeAuthManager()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            event = {
+                "response": {
+                    "candidates": [
+                        {
+                            "finishReason": "STOP",
+                            "content": {
+                                "parts": [
+                                    {
+                                        "functionCall": {
+                                            "name": "search",
+                                            "args": {"q": "hermes"},
+                                        }
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                }
+            }
+            body = f"data: {json.dumps(event)}\n\ndata: [DONE]\n\n"
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/event-stream"},
+                content=body.encode(),
+            )
+
+        client = AntigravityClient(auth)
+        await client._http.aclose()
+        client._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            chunks = [
+                chunk
+                async for chunk in client.stream_chat_completion(
+                    {
+                        "model": "gemini-3.7-flash",
+                        "messages": [{"role": "user", "content": "hello"}],
+                        "stream": True,
+                    }
+                )
+            ]
+        finally:
+            await client.close()
+
+        finish_reasons = [
+            json.loads(c[len("data: "):])["choices"][0]["finish_reason"]
+            for c in chunks
+            if c.startswith("data: {")
+        ]
+        self.assertEqual(finish_reasons, [None, "tool_calls"])
 
 
 class AccountPoolTests(unittest.TestCase):
@@ -491,7 +555,10 @@ class AccountPoolTests(unittest.TestCase):
             manager.save_credentials(second)
 
             def fail_refresh(_creds):
-                raise RuntimeError("invalid_grant")
+                # Google từ chối refresh token (invalid_grant) = HTTPError 400
+                raise urllib.error.HTTPError(
+                    "https://oauth2.googleapis.com/token", 400, "invalid_grant", {}, None
+                )
 
             manager.refresh_access_token = fail_refresh
             with self.assertLogs(bridge_auth.logger, level="WARNING") as captured:
@@ -503,6 +570,42 @@ class AccountPoolTests(unittest.TestCase):
             self.assertEqual(failed["last_failure_status"], 401)
             self.assertNotIn("expired-token", "\n".join(captured.output))
             self.assertNotIn("bad-refresh", "\n".join(captured.output))
+
+    def test_transient_refresh_error_skips_without_cooldown(self) -> None:
+        # Lỗi mạng tạm thời khi refresh KHÔNG được cooldown tài khoản —
+        # đây chính là bug "chạy ~1h thì chết cả pool" (token hết hạn sau 1h,
+        # một nhịp mạng chập chờn từng làm nguội mọi tài khoản 5 phút).
+        with tempfile.TemporaryDirectory() as tmp:
+            token_file = Path(tmp) / "antigravity_tokens.json"
+            manager = bridge_auth.AntigravityAuthManager(auth_file=token_file)
+            first = bridge_auth.AntigravityCredentials(
+                access_token="expired-token",
+                refresh_token="refresh-a",
+                expires_at=1,
+                email="a@example.com",
+                project_id="project-a",
+            )
+            second = bridge_auth.AntigravityCredentials(
+                access_token="token-b",
+                expires_at=0,
+                email="b@example.com",
+                project_id="project-b",
+            )
+            manager.save_credentials(first)
+            manager.save_credentials(second)
+
+            def fail_refresh(_creds):
+                raise TimeoutError("network timed out")
+
+            manager.refresh_access_token = fail_refresh
+            with self.assertLogs(bridge_auth.logger, level="WARNING"):
+                candidates = manager.resolve_credential_candidates()
+
+            self.assertEqual([c.email for c in candidates], ["b@example.com"])
+            stored = json.loads(token_file.read_text(encoding="utf-8"))
+            skipped = stored["accounts"]["a@example.com"]
+            # Không cooldown: tài khoản sẵn sàng thử lại ngay lượt sau
+            self.assertEqual(skipped.get("unavailable_until", 0), 0)
 
     def test_all_cooled_accounts_report_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

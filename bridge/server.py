@@ -11,6 +11,7 @@ Implements standard OpenAI API endpoints:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -31,6 +32,11 @@ try:
         ANTIGRAVITY_SUPPORTED_MODELS,
         AntigravityClient,
     )
+    from bridge.claude_code import (
+        CLI_MODEL_ALIASES,
+        ClaudeCodeCliClient,
+        ClaudeCodeCliError,
+    )
 except ImportError:
     from tools.antigravity_bridge.auth import (
         AntigravityAuthManager,
@@ -40,11 +46,29 @@ except ImportError:
         ANTIGRAVITY_SUPPORTED_MODELS,
         AntigravityClient,
     )
+    from tools.antigravity_bridge.claude_code import (
+        CLI_MODEL_ALIASES,
+        ClaudeCodeCliClient,
+        ClaudeCodeCliError,
+    )
 
 logger = logging.getLogger(__name__)
 
+
+def _upstream_status(exc: Exception) -> int:
+    """Lấy mã HTTP thật từ UpstreamError; các lỗi khác đoán an toàn từ nội dung."""
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and 400 <= status < 600:
+        return status
+    text = str(exc)
+    if "429" in text or "exhausted" in text.lower():
+        return 429
+    return 500
+
+
 DEFAULT_BRIDGE_PORT = 8100
 DEFAULT_BRIDGE_HOST = "127.0.0.1"
+CLAUDE_CODE_SUPPORTED_MODELS = tuple(sorted(set(CLI_MODEL_ALIASES.values())))
 
 
 def get_bridge_dir() -> Path:
@@ -76,6 +100,7 @@ class AntigravityBridgeServer:
         self.port = port
         self.auth_manager = auth_manager or AntigravityAuthManager()
         self.client = AntigravityClient(self.auth_manager)
+        self.claude_code_client = ClaudeCodeCliClient()
         self.app = web.Application()
         self._setup_routes()
 
@@ -85,6 +110,8 @@ class AntigravityBridgeServer:
         self.app.router.add_post("/auth/login", self.handle_auth_login)
         self.app.router.add_get("/v1/models", self.handle_list_models)
         self.app.router.add_post("/v1/chat/completions", self.handle_chat_completions)
+        self.app.router.add_get("/v1/claude-code/models", self.handle_claude_code_models)
+        self.app.router.add_post("/v1/claude-code/chat/completions", self.handle_claude_code_completions)
 
     async def handle_health(self, request: web.Request) -> web.Response:
         return web.json_response({
@@ -166,7 +193,7 @@ class AntigravityBridgeServer:
                 first_chunk = await stream_gen.__anext__()
             except Exception as e:
                 logger.error("Error connecting to chat completion stream: %s", e)
-                status_code = 429 if "429" in str(e) or "exhausted" in str(e).lower() else (403 if "403" in str(e) else 500)
+                status_code = _upstream_status(e)
                 err_type = "rate_limit_error" if status_code == 429 else "api_error"
                 return web.json_response(
                     {"error": {"message": str(e), "type": err_type, "code": status_code}},
@@ -198,6 +225,11 @@ class AntigravityBridgeServer:
                     logger.debug("Client connection lost during streaming: %s", e)
                 else:
                     logger.error("Unexpected error during streaming: %s", e)
+            finally:
+                # Đóng generator để giải phóng kết nối httpx tới Google ngay,
+                # kể cả khi client ngắt giữa chừng (tránh cạn connection pool).
+                with contextlib.suppress(Exception):
+                    await stream_gen.aclose()
             return response
         else:
             try:
@@ -205,12 +237,67 @@ class AntigravityBridgeServer:
                 return web.json_response(result)
             except Exception as e:
                 logger.error("Error during chat completion: %s", e)
-                status_code = 429 if "429" in str(e) or "exhausted" in str(e).lower() else (403 if "403" in str(e) else 500)
+                status_code = _upstream_status(e)
                 err_type = "rate_limit_error" if status_code == 429 else "api_error"
                 return web.json_response(
                     {"error": {"message": str(e), "type": err_type, "code": status_code}},
                     status=status_code,
                 )
+
+    async def handle_claude_code_models(self, request: web.Request) -> web.Response:
+        return web.json_response({
+            "object": "list",
+            "data": [
+                {
+                    "id": model,
+                    "object": "model",
+                    "created": int(time.time()),
+                    "owned_by": "claude-code-cli",
+                    "permission": [],
+                }
+                for model in CLAUDE_CODE_SUPPORTED_MODELS
+            ],
+        })
+
+    async def handle_claude_code_completions(self, request: web.Request) -> web.StreamResponse:
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            return web.json_response(
+                {"error": {"message": f"Invalid JSON payload: {exc}", "type": "invalid_request_error"}},
+                status=400,
+            )
+        try:
+            result = await self.claude_code_client.create_chat_completion(payload)
+        except Exception as exc:
+            logger.error("Claude Code CLI completion failed: %s", exc)
+            status_code = _upstream_status(exc)
+            err_type = "rate_limit_error" if status_code == 429 else "api_error"
+            return web.json_response(
+                {"error": {"message": str(exc), "type": err_type, "code": status_code}},
+                status=status_code,
+            )
+        if not payload.get("stream"):
+            return web.json_response(result)
+
+        choice = result["choices"][0]
+        delta = dict(choice["message"])
+        response = web.StreamResponse(
+            status=200,
+            headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"},
+        )
+        await response.prepare(request)
+        chunk = {
+            "id": result["id"],
+            "object": "chat.completion.chunk",
+            "created": result["created"],
+            "model": result["model"],
+            "choices": [{"index": 0, "delta": delta, "finish_reason": choice["finish_reason"]}],
+        }
+        await response.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
+        await response.write(b"data: [DONE]\n\n")
+        await response.write_eof()
+        return response
 
     async def start(self) -> web.AppRunner:
         runner = web.AppRunner(self.app)
@@ -239,12 +326,14 @@ def is_server_running(host: str = DEFAULT_BRIDGE_HOST, port: int = DEFAULT_BRIDG
         return False
 
 
-def ensure_antigravity_bridge_running(
+def _ensure_bridge_running(
     host: str = DEFAULT_BRIDGE_HOST,
     port: int = DEFAULT_BRIDGE_PORT,
     timeout: float = 3.0,
+    *,
+    require_antigravity_credentials: bool,
 ) -> bool:
-    """Ensure the Antigravity bridge server is running, spawning a daemon if not."""
+    """Ensure the shared bridge server is running, spawning a daemon if not."""
     if is_server_running(host=host, port=port):
         return True
 
@@ -252,13 +341,14 @@ def ensure_antigravity_bridge_running(
     import sys
     import time
 
-    try:
-        from tools.antigravity_bridge.auth import AntigravityAuthManager
-        mgr = AntigravityAuthManager()
-        if not mgr.load_all_stored_credentials():
+    if require_antigravity_credentials:
+        try:
+            from tools.antigravity_bridge.auth import AntigravityAuthManager
+            mgr = AntigravityAuthManager()
+            if not mgr.load_all_stored_credentials():
+                return False
+        except Exception:
             return False
-    except Exception:
-        return False
 
     cmd = [
         sys.executable,
@@ -297,4 +387,21 @@ def ensure_antigravity_bridge_running(
     except Exception as e:
         logger.warning("Failed to auto-spawn Antigravity Bridge: %s", e)
         return False
+
+
+def ensure_antigravity_bridge_running(
+    host: str = DEFAULT_BRIDGE_HOST, port: int = DEFAULT_BRIDGE_PORT, timeout: float = 3.0
+) -> bool:
+    return _ensure_bridge_running(
+        host, port, timeout, require_antigravity_credentials=True
+    )
+
+
+def ensure_claude_code_bridge_running(
+    host: str = DEFAULT_BRIDGE_HOST, port: int = DEFAULT_BRIDGE_PORT, timeout: float = 3.0
+) -> bool:
+    """Start the local bridge for Claude Code without requiring Google OAuth."""
+    return _ensure_bridge_running(
+        host, port, timeout, require_antigravity_credentials=False
+    )
 

@@ -33,6 +33,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+
+class UpstreamError(RuntimeError):
+    """Lỗi từ upstream (Google Code Assist) kèm mã HTTP thật, để server
+    trả đúng status cho Hermes (429 khi hết quota → kích hoạt fallback chain)."""
+
+    def __init__(self, message: str, status_code: int = 500) -> None:
+        super().__init__(message)
+        self.status_code = int(status_code)
+
 # Constants
 ENV_CLIENT_ID = "HERMES_ANTIGRAVITY_CLIENT_ID"
 ENV_CLIENT_SECRET = "HERMES_ANTIGRAVITY_CLIENT_SECRET"
@@ -251,13 +260,27 @@ class AntigravityAuthManager:
                         continue
                     try:
                         creds = self.refresh_access_token(creds)
-                    except Exception as exc:
+                    except urllib.error.HTTPError as exc:
+                        # 400/401 từ Google = refresh token bị thu hồi/không hợp lệ
+                        # → cooldown thật sự là đúng.
                         logger.warning(
-                            "Failed to refresh Antigravity account %s: %s",
+                            "Refresh token rejected for Antigravity account %s (HTTP %s): %s",
                             creds.email or "unknown",
+                            exc.code,
                             exc,
                         )
                         self.mark_account_unavailable(creds, 401)
+                        continue
+                    except Exception as exc:
+                        # Lỗi mạng tạm thời (timeout, DNS, reset...) — KHÔNG phải
+                        # token hỏng. Chỉ bỏ qua tài khoản này trong lượt này,
+                        # không ghi cooldown, để lượt sau thử lại ngay.
+                        logger.warning(
+                            "Transient error refreshing Antigravity account %s "
+                            "(skipping this attempt, no cooldown): %s",
+                            creds.email or "unknown",
+                            exc,
+                        )
                         continue
                 if not creds.project_id:
                     creds.project_id = self.resolve_project_id(creds)
@@ -271,8 +294,9 @@ class AntigravityAuthManager:
                 )
                 wait_seconds = max(0, int(earliest - now)) if earliest else 0
                 suffix = f" Retry in about {wait_seconds}s." if wait_seconds else ""
-                raise RuntimeError(
-                    "All Antigravity OAuth accounts are unavailable or expired." + suffix
+                raise UpstreamError(
+                    "All Antigravity OAuth accounts are unavailable or expired." + suffix,
+                    status_code=429,
                 )
             return candidates
 
@@ -398,13 +422,17 @@ class AntigravityAuthManager:
                     tmp_ast = ast.with_suffix(".tmp")
                     with open(tmp_ast, "w", encoding="utf-8") as af:
                         json.dump(store, af, indent=2)
+                    # File chứa OAuth token — chỉ chủ sở hữu được đọc.
+                    with contextlib.suppress(OSError):
+                        os.chmod(tmp_ast, 0o600)
                     shutil.move(str(tmp_ast), str(ast))
                 except Exception as e:
                     logger.debug("Failed syncing auth store to %s: %s", ast, e)
 
         except Exception as e:
             logger.error("Failed to save credentials: %s", e)
-            if tmp_path.exists():
+            tmp_path = locals().get("tmp_path")
+            if tmp_path is not None and tmp_path.exists():
                 tmp_path.unlink(missing_ok=True)
 
     def clear_credentials(self) -> bool:
