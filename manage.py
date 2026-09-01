@@ -284,6 +284,53 @@ DEFAULT_ANTHROPIC_FALLBACK_MODEL = "claude-sonnet-4-6"
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
 DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_GROQ_FALLBACK_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_CLAUDE_CODE_CLI_MODEL = "sonnet"
+
+
+def configure_claude_code_cli(hermes_dir: Path, *, model: str = DEFAULT_CLAUDE_CODE_CLI_MODEL, port: int = DEFAULT_BRIDGE_PORT) -> Path:
+    """Select the local Claude Code subscription bridge as Hermes' primary model."""
+    import yaml
+
+    config_file = hermes_dir / "config.yaml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config: dict = {}
+    if config_file.exists():
+        config = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+    config["model"] = {
+        "provider": "claude-code-cli",
+        "default": model,
+        "base_url": f"http://127.0.0.1:{port}/v1/claude-code",
+    }
+    existing = config.get("fallback_providers")
+    if isinstance(existing, list):
+        config["fallback_providers"] = [
+            item for item in existing
+            if not (isinstance(item, dict) and item.get("provider") == "claude-code-cli")
+        ]
+    with open(config_file, "w", encoding="utf-8") as handle:
+        yaml.dump(config, handle, default_flow_style=False)
+    return config_file
+
+
+def cmd_setup_claude_code(args: argparse.Namespace) -> int:
+    """Configure Hermes to call the authenticated local Claude Code CLI."""
+    hermes_dir = get_hermes_dir()
+    cmd_install(args)
+    env_file = hermes_dir / ".env"
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    env_content = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
+    if "CLAUDE_CODE_CLI_KEY=" not in env_content:
+        with open(env_file, "a", encoding="utf-8") as handle:
+            handle.write("\n# Local Claude Code subscription bridge (not an Anthropic API key)\nCLAUDE_CODE_CLI_KEY=local-claude-code-bridge\n")
+    model = getattr(args, "model", None) or DEFAULT_CLAUDE_CODE_CLI_MODEL
+    port = getattr(args, "port", None) or DEFAULT_BRIDGE_PORT
+    configure_claude_code_cli(hermes_dir, model=model, port=port)
+    print(f"[+] Hermes now uses Claude Code CLI ({model}) at http://127.0.0.1:{port}/v1/claude-code")
+    if not shutil.which("claude"):
+        print("[!] Claude Code CLI was not found. Install it, then run `claude auth login`.")
+    else:
+        print("[*] Run `claude auth login` once to authenticate your Claude subscription before chatting.")
+    return 0
 
 
 def apply_priority_fallback_config(
@@ -649,6 +696,12 @@ def main() -> int:
 
     subparsers.add_parser("install", help="Install provider plugin to ~/.hermes/ for upgrade persistence")
 
+    p_setup_claude = subparsers.add_parser(
+        "setup-claude-code", help="Use local Claude Code subscription CLI as the Hermes provider"
+    )
+    p_setup_claude.add_argument("--model", choices=("sonnet", "opus", "haiku"), default="sonnet")
+    p_setup_claude.add_argument("--port", type=int, default=DEFAULT_BRIDGE_PORT)
+
     p_setup = subparsers.add_parser("setup", help="Auto-configure Hermes to use Antigravity")
     p_setup.add_argument("--model", type=str, default="gemini-3.7-flash", help="Default model name")
     p_setup.add_argument("--port", type=int, default=DEFAULT_BRIDGE_PORT)
@@ -710,6 +763,7 @@ def main() -> int:
         "login": cmd_login,
         "install": cmd_install,
         "setup": cmd_setup,
+        "setup-claude-code": cmd_setup_claude,
     }
     return handlers[args.action](args)
 

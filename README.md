@@ -5,6 +5,16 @@ Giúp Hermes Agent gọi các mô hình AI cao cấp: Gemini 3.7/3.6/3.5/3.1, Cl
 
 Xem hướng dẫn chi tiết tại [`README_DETAILED_VI.md`](README_DETAILED_VI.md) để biết cách thiết lập đầy đủ, và [`skills/antigravity-oauth-bridge/SKILL.md`](skills/antigravity-oauth-bridge/SKILL.md) để cài đặt skill hướng dẫn của Hermes Agent.
 
+## Claude Code gói tháng (CLI local)
+
+Plugin cũng có provider `claude-code-cli`: Hermes gọi `claude -p` trên chính máy cục bộ và dùng phiên đăng nhập Claude Code subscription, **không cần `ANTHROPIC_API_KEY`**. Claude Code bị chạy với `--tools ""`; mọi tool call vẫn do Hermes quyết định và thực thi.
+
+```bash
+claude auth login
+python manage.py setup-claude-code --model sonnet  # hoặc opus / haiku
+hermes chat -q "Phản hồi chính xác chữ: OK" --provider claude-code-cli -m sonnet
+```
+
 ## 📌 Tính Năng Mới (v1.0)
 - **🔄 In-Account Model Fallback**: Tự động thử model dự phòng (`claude-sonnet-4-6`) trên cùng một tài khoản Google khi model chính (`gemini-3.7-flash`) hết quota, giúp tiết kiệm tài khoản trước khi xoay tài khoản hoặc dùng provider ngoài.
 - **🛡️ Cải Tiến Priority Fallback**: Tự động gộp cấu hình dự phòng theo nhà cung cấp (provider-level deduplication) tránh trùng lặp cấu hình mặc định và bảo toàn các tùy chọn model thủ công của người dùng khi nâng cấp plugin.
