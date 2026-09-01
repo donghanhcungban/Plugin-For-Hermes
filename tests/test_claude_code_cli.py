@@ -36,6 +36,7 @@ class ClaudeCodeCliClientTests(unittest.TestCase):
         self.assertEqual(response["choices"][0]["message"]["content"], "Chào bạn!")
         self.assertEqual(response["choices"][0]["finish_reason"], "stop")
         self.assertIn("--tools", observed[0])
+        self.assertNotIn("--bare", observed[0])
         self.assertIn("", observed[0])
         self.assertIn("--no-session-persistence", observed[0])
 

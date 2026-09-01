@@ -160,7 +160,6 @@ class ClaudeCodeCliClient:
         command = [
             self._cli_path,
             "-p",
-            "--bare",
             "--tools",
             "",
             "--no-session-persistence",
