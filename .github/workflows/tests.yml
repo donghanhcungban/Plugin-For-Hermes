@@ -18,6 +18,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: requirements-dev.txt
       - name: Cài dependency kiểm thử
         run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
       - name: Chạy unit tests
