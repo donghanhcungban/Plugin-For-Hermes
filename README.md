@@ -3,7 +3,7 @@
 Plugin model-provider + local OAuth bridge cho [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 Giúp Hermes Agent gọi các mô hình AI cao cấp: Gemini 3.7/3.6/3.5/3.1, Claude Sonnet/Opus 4.6, và GPT-OSS 120B thông qua đăng nhập **Google Antigravity IDE** OAuth. Hỗ trợ tự động **xoay tài khoản** (multi-account failover) khi bị giới hạn rate limit/hết hạn ngạch (quota) và tự động chuyển đổi model dự phòng trong cùng một tài khoản (in-account model fallback).
 
-Xem hướng dẫn chi tiết tại [`README_DETAILED_VI.md`](README_DETAILED_VI.md) để biết cách thiết lập đầy đủ, và [`skills/antigravity-oauth-bridge/SKILL.md`](skills/antigravity-oauth-bridge/SKILL.md) để cài đặt skill hướng dẫn của Hermes Agent.
+Xem hướng dẫn chi tiết tại [`README_DETAILED_VI.md`](README_DETAILED_VI.md), bản tổng hợp cấu hình đang dùng tại [`docs/CURRENT_SETUP_VI.md`](docs/CURRENT_SETUP_VI.md), và các skill trong thư mục [`skills/`](skills/).
 
 ## Claude Code gói tháng (CLI local)
 
@@ -35,9 +35,12 @@ hermes chat -q "Phản hồi chính xác chữ: OK" --provider antigravity -m ge
 plugin/                    Hermes model-provider plugin (ProviderProfile)
 bridge/                    Local OAuth + Code Assist translation bridge
 tests/                     Bộ test suite (unittest, không cần kết nối mạng)
-skills/antigravity-oauth-bridge/  Skill hướng dẫn vận hành plugin
+skills/antigravity-oauth-bridge/   Skill vận hành plugin và rotation OAuth
+skills/hermes-provider-management/ Skill quản lý provider/fallback/compression
 skills/project-harness-engineering/ Skill thiết kế và audit project harness
-install.py                 Script cài đặt 1-Click tự động vào $HERMES_HOME
+config/hermes-rotation.example.yaml Cấu hình mẫu đã loại bí mật
+docs/CURRENT_SETUP_VI.md            Tổng hợp cấu hình vận hành hiện tại
+install.py                           Script cài plugin + bridge + skill vào $HERMES_HOME
 manage.py                  CLI: login / start / stop / status / install / setup
 .hermes/environment.json   Cấu hình `hermes verify` tự động cho dự án
 ```

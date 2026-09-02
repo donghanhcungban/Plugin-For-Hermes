@@ -1,0 +1,33 @@
+# Cấu hình mẫu đã lược bỏ bí mật.
+# Không sao chép auth/antigravity_tokens.json hoặc các biến API key vào Git.
+model:
+  provider: antigravity
+  default: gemini-3.7-flash-low
+  base_url: http://127.0.0.1:8100/v1
+
+fallback_providers:
+  - provider: openai-codex
+    model: gpt-5-codex
+  - provider: antigravity
+    model: gemini-3.7-flash-medium
+  - provider: antigravity
+    model: gemini-3.7-flash
+  - provider: anthropic
+    model: claude-sonnet-4-6
+  - provider: openai-codex
+    model: gpt-5.6-sol
+    base_url: https://chatgpt.com/backend-api/codex
+  - provider: opencode-free
+    model: deepseek-v4-flash-free
+    base_url: https://opencode.ai/zen/v1
+    api_mode: chat_completions
+
+compression:
+  enabled: true
+  threshold: 0.7
+  target_ratio: 0.2
+  protect_last_n: 20
+
+agent:
+  api_max_retries: 3
+  gateway_timeout: 1800
